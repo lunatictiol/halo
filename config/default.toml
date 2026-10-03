@@ -3,10 +3,13 @@
 [data]
 hf_base_url = "https://huggingface.co/datasets/vectara/open_ragbench/resolve/main/pdf/arxiv"
 data_dir = "data"
+# arXiv asks automated clients to use the export mirror instead of arxiv.org.
+arxiv_pdf_host = "https://export.arxiv.org"
 # arXiv's terms for automated access: at most one request every 3 seconds, single connection.
 arxiv_delay_seconds = 3.0
 http_timeout_seconds = 60
-http_retries = 3
+# arXiv throttles bursts with transient 406s and dropped connections; exponential backoff rides them out.
+http_retries = 5
 
 [splits]
 seed = 20261003

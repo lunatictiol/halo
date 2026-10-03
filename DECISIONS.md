@@ -67,4 +67,5 @@ Each entry: what was chosen, alternatives, why, and the number that justified it
 
 ### D11. Download politeness
 - **Chosen:** arXiv PDFs fetched sequentially, 3 s between requests, 5 retries with exponential backoff; HF files in parallel (8 workers). Atomic writes, PDF magic-byte validation, skips existing files.
-- **Why:** arXiv's automated-access guidance is ≤1 request / 3 s. The first run hit transient throttling (25 × HTTP 406, 46 × dropped connections out of ~585); manual retries of those URLs returned 200, so backoff + re-run is enough.
+- **Why:** arXiv's automated-access guidance is ≤1 request / 3 s. The first run hit transient throttling (25 × HTTP 406, 46 × dropped connections out of ~585); manual retries of those URLs returned 200. A re-run against `arxiv.org` kept failing, so PDFs are now fetched from `export.arxiv.org` (arXiv's designated host for automated clients, `data.arxiv_pdf_host`); that run completed all remaining PDFs.
+- **Evidence:** `results/m0_audit.txt` — 1,000/1,000 valid PDFs present.
