@@ -1,0 +1,22 @@
+﻿OK   held_out.json  sha256=1b36dd84a0ca31c6
+OK   abstention_set.json  sha256=16eec115049c0f5f
+OK   dev_slice.json  sha256=04a29919b27afda3
+OK   dev_sample.json  sha256=b98116d78c4bc1fe
+OK   full.json  sha256=4ff55084a45e27f6
+All split files reproduce byte-identically.
+
+held_out papers: 20, abstention questions: 152
+dev_slice: 103 papers = 43 source + 60 distractors (60 category-matched)
+dev_sample questions: 303, full questions: 2893, full index papers: 980
+
+By type:
+                             abstractive          extractive      n
+  full (answerable)                58.6%               41.4%   2893
+  dev_sample                       59.1%               40.9%    303
+  abstention_set                   65.1%               34.9%    152
+
+By source:
+                                    text          text-image          text-table    text-table-image      n
+  full (answerable)                62.3%               25.4%                5.0%                7.3%   2893
+  dev_sample                       67.3%               23.8%                4.3%                4.6%    303
+  abstention_set                   73.7%               17.8%                2.6%                5.9%    152

@@ -1,0 +1,26 @@
+{
+  "kind": "llm_bench",
+  "model": "qwen3:8b",
+  "gpu": "NVIDIA GeForce RTX 4050 Laptop GPU, 6141 MiB",
+  "git_commit": "4c0177b",
+  "timestamp": "2026-10-03T17:46:51+00:00",
+  "runs": [
+    {
+      "eval_tokens": 245,
+      "gen_tokens_per_sec": 17.638771777043623,
+      "prompt_tokens_per_sec": 557.0217901619342
+    },
+    {
+      "eval_tokens": 245,
+      "gen_tokens_per_sec": 17.71221126836422,
+      "prompt_tokens_per_sec": 579.4781936836877
+    },
+    {
+      "eval_tokens": 245,
+      "gen_tokens_per_sec": 17.982626727423966,
+      "prompt_tokens_per_sec": 599.9571459181487
+    }
+  ],
+  "median_gen_tokens_per_sec": 17.7,
+  "ollama_ps": "NAME        ID              SIZE      PROCESSOR          CONTEXT    UNTIL              \nqwen3:8b    500a1f067a9f    6.0 GB    30%/70% CPU/GPU    4096       4 minutes from now"
+}
