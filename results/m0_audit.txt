@@ -1,0 +1,33 @@
+﻿Counts vs published:
+  [OK] papers in pdf_urls.json: 1000
+  [OK] source papers (doc_ids in qrels): 396
+  [OK] distractors (papers with no questions): 604
+  [OK] questions in queries.json: 3045
+  [OK] answers in answers.json: 3045
+  [OK] qrels entries: 3045
+
+ID consistency:
+  [OK] queries/answers/qrels share the same query IDs: True
+  [OK] every qrels doc_id is in pdf_urls: True
+
+Files on disk:
+  [OK] corpus JSON files present: 1000
+  [OK] valid PDFs present: 1000
+
+qrels -> corpus sections:
+  [OK] qrels section_ids that exist in their doc: 3045
+  section_id equals list position for 3045/3045 qrels
+  sections per doc: min 0, median 16.0, max 198
+  docs whose section_ids are not 0..n-1: 0
+
+Question labels:
+  type: {'abstractive': 1793, 'extractive': 1252}
+  source: {'text': 1914, 'text-image': 763, 'text-table': 148, 'text-table-image': 220}
+  questions per source paper: min 1, mean 7.69, max 10
+
+Local third-party CSVs (not used as corpus, see DATA.md):
+  All_PDFs.csv rows: 1001 (605 distractors)
+  local distractors also in official corpus: 19
+  Eval_data.csv query IDs matching HF: 3045/3045
+
+ALL CHECKS PASSED

@@ -69,7 +69,8 @@ def main() -> None:
     failed, new = [], 0
     for i, doc_id in enumerate(doc_ids, 1):
         try:
-            if fetch(pdf_urls[doc_id], pdf_dir(cfg) / f"{doc_id}.pdf", timeout, retries, validate=is_pdf):
+            url = pdf_urls[doc_id].replace("https://arxiv.org", d["arxiv_pdf_host"])
+            if fetch(url, pdf_dir(cfg) / f"{doc_id}.pdf", timeout, retries, validate=is_pdf):
                 new += 1
                 print(f"  [{i}/{len(doc_ids)}] {doc_id}", flush=True)
                 time.sleep(d["arxiv_delay_seconds"])
