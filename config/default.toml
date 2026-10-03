@@ -1,0 +1,20 @@
+# HALO configuration. All tunable values live here; see DECISIONS.md for why each was chosen.
+
+[data]
+hf_base_url = "https://huggingface.co/datasets/vectara/open_ragbench/resolve/main/pdf/arxiv"
+data_dir = "data"
+# arXiv's terms for automated access: at most one request every 3 seconds, single connection.
+arxiv_delay_seconds = 3.0
+http_timeout_seconds = 60
+http_retries = 3
+
+[splits]
+seed = 20261003
+held_out_papers = 20
+dev_sample_min_questions = 300
+dev_distractors = 60
+
+[models]
+llm = "qwen3:8b"
+embedding = "nomic-embed-text"
+ollama_url = "http://localhost:11434"
