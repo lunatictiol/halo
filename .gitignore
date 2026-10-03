@@ -1,0 +1,36 @@
+# Data: entirely rebuilt by scripts/download_data.py
+data/
+All_PDFs.csv
+Eval_data.csv
+
+# Personal study notes (see CLAUDE.md rule 8)
+MILESTONE_NOTES.md
+
+# Python / uv
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# Local indexes / caches
+qdrant_storage/
+*.log
+
+# Tooling (agent skills, plugins, generated graphs)
+.agents/
+.claude/skills/
+.claude/settings.local.json
+.claude/proven-config.json
+.claude/.proven-config-version
+.claude-flow/
+graphify-out/
+skills-lock.json
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+.env
