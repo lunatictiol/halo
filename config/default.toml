@@ -21,3 +21,18 @@ dev_distractors = 60
 llm = "qwen3:8b"
 embedding = "nomic-embed-text"
 ollama_url = "http://localhost:11434"
+
+[ingest]
+# Chunk = consecutive PDF blocks of one Vectara section, split into word windows (DECISIONS.md D12-D13).
+chunk_words = 300
+overlap_words = 50
+# Block -> section mapping: word n-gram size and the minimum share of a block's n-grams found in its best section.
+shingle_n = 5
+min_match = 0.3
+
+[index]
+qdrant_path = "data/index/qdrant"
+embed_batch = 64
+# nomic-embed-text is trained with these task prefixes; omitting them degrades retrieval.
+doc_prefix = "search_document: "
+query_prefix = "search_query: "
