@@ -36,3 +36,69 @@ embed_batch = 64
 # nomic-embed-text is trained with these task prefixes; omitting them degrades retrieval.
 doc_prefix = "search_document: "
 query_prefix = "search_query: "
+
+[llm]
+# Deterministic decoding so reruns of generation and judging are reproducible.
+temperature = 0
+seed = 0
+# Explicit window: Ollama's default is smaller and truncates long prompts silently. 5 chunks x 300 words
+# is ~2.5k tokens; halo/llm.py raises if a call reaches this limit.
+num_ctx = 8192
+# qwen3 "thinking" multiplies output tokens ~5-10x at 17.7 tok/s; off for every M2 call (DECISIONS.md D19).
+think = false
+timeout_seconds = 600
+# Ollama can 500 while swapping models in/out of VRAM; retry with linear backoff.
+http_retries = 3
+retry_backoff_seconds = 5
+
+[retrieve]
+collection = "dev_slice"
+# Retrieval metrics are computed on k_eval chunks; the generator sees the top k_context (DECISIONS.md D19).
+k_eval = 10
+k_context = 5
+recall_ks = [5, 10]
+
+[generate]
+prompt_version = "baseline-v1"
+max_tokens = 400
+sentinel = "INSUFFICIENT_EVIDENCE"
+system_prompt = """You answer questions about research papers using ONLY the numbered context passages you are given. \
+Do not use outside knowledge. Answer directly and concisely, in at most a few sentences. \
+If the passages do not contain the information needed to answer the question, reply with exactly {sentinel} and nothing else."""
+user_prompt = """Context passages:
+
+{context}
+
+Question: {question}
+
+Answer:"""
+
+[judge]
+# Judge model is recorded in every results file. Same model as the generator: see DECISIONS.md D18 on self-preference.
+model = "qwen3:8b"
+prompt_version = "judge-v1"
+max_tokens = 200
+parse_retries = 1
+system_prompt = """You are a strict, impartial grader for a question-answering system over research papers. \
+Respond only with JSON containing "reason" (one sentence) and "verdict"."""
+faithfulness_prompt = """Decide whether the ANSWER is supported by the CONTEXT.
+- "supported": every factual claim in the answer is stated in, or directly inferable from, the context.
+- "unsupported": at least one claim is absent from or contradicts the context.
+Judge only support by the context, not whether the answer is correct or complete.
+
+QUESTION: {question}
+
+CONTEXT:
+{context}
+
+ANSWER: {answer}"""
+correctness_prompt = """Decide whether the CANDIDATE answer is correct, using the REFERENCE answer as ground truth.
+- "correct": the candidate conveys the key facts of the reference and does not contradict it. Different wording, \
+extra detail, or omitting secondary details is fine.
+- "incorrect": the candidate misses the main point, contradicts the reference, or answers a different question.
+
+QUESTION: {question}
+
+REFERENCE: {reference}
+
+CANDIDATE: {answer}"""

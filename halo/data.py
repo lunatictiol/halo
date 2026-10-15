@@ -37,3 +37,8 @@ def load_corpus_doc(doc_id: str, cfg: dict | None = None) -> dict:
 
 def sha256_file(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def load_split(name: str) -> dict:
+    """A committed split file (splits/<name>.json): {name, seed, inputs_sha256, paper_ids, query_ids}."""
+    return json.loads((ROOT / "splits" / f"{name}.json").read_text(encoding="utf-8"))
