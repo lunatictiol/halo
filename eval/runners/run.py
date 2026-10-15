@@ -126,6 +126,13 @@ def metric_names(cfg: dict, answerable: bool) -> list[str]:
             + ["faithful", "correct", "correct_if_answered", "abstained"])
 
 
+def _token_stats(gens: list[dict]) -> dict:
+    """Shows how close prompts came to num_ctx (truncation guard) and how long answers were."""
+    prompt, output = [g["prompt_tokens"] for g in gens], [g["output_tokens"] for g in gens]
+    return {"prompt_median": statistics.median(prompt), "prompt_max": max(prompt),
+            "output_median": statistics.median(output), "output_max": max(output)}
+
+
 def score(split: str, queries: list[dict], retrieved: dict, generated: dict, judged: dict, cfg: dict) -> dict:
     answerable = split not in ABSTENTION_SPLITS
     recs = [per_query_record(q, retrieved[q["query_id"]], generated[q["query_id"]], judged[q["query_id"]], cfg, answerable)
@@ -137,6 +144,7 @@ def score(split: str, queries: list[dict], retrieved: dict, generated: dict, jud
         "latency_ms_median": {"retrieve": statistics.median(r["retrieve_ms"] for r in recs),
                               "generate": statistics.median(r["generate_ms"] for r in recs)},
         "judge_calls": len(verdicts), "judge_errors": sum(v["verdict"] is None for v in verdicts),
+        "generator_tokens": _token_stats([generated[q["query_id"]] for q in queries]),
     }
     if not answerable:
         # Answered *and* judged supported: another indexed paper may genuinely answer it (CLAUDE.md spot-check).
