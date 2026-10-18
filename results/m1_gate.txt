@@ -1,0 +1,50 @@
+# M1 gate — dev_slice (103 papers)
+config: ingest={'chunk_words': 300, 'overlap_words': 50, 'shingle_n': 5, 'min_match': 0.3} embedding=nomic-embed-text
+
+## Ingestion run 1
+  blocks: 113094, inherited (score < min_match): 77771 (68.8%)
+  score deciles: 0.00 0.00 0.00 0.00 0.00 0.00 0.40 0.89 1.00
+
+## 1. Metadata coverage
+  [OK] chunks with paper_id, section_id, page: 6740/6740
+  chunks per paper: 59 median
+
+## 2. qrels sections covered by >=1 chunk (dev_sample)
+  [OK] qrels sections with a chunk: 228/228
+
+## 3. Idempotency (ingestion run 2)
+  [OK] same chunk count: 6740 -> 6740
+  [OK] no duplicate (paper_id, chunk_idx): max copies 1
+  [OK] identical ids and texts: byte-equal
+
+## 4. Spot checks (first 5 text-modality dev_sample questions by id, top 3)
+
+Q: In which type of space do volumes dominate exponentially for large radii?
+   gold: 2403.13015v2 s26
+   1. GOLD 0.769 2403.13015v2 s26 p16 [A. 1 Exponential vs. Polynomial Volume G] 'A.1 Exponential vs. Polynomial Volume Growth Let Ω⊂Pn c be an n-dimensional hyperbolic region (e.g., a Poincaré ball) with radius R. Up to lower-order factors, '
+   2.      0.686 2403.13015v2 s10 p5 [4 Method] 'In an n-dimensional Euclidean space Rn, the volume of an n-ball of radius r grows polynomially as VE(r) ∝ rn, making it necessary to expand r substantially to m'
+   3.      0.682 2408.07379v2 s0 p9 [REFERENCES] 'large compared to dist(x, S) and dist(y, S). This can be seen from the limit case: as ρ →0, the bound blows up but RS,ρ(x, y) remains well-bounded. Hence the bo'
+
+Q: What is the correlation between the tax instrument and recovered tax shock during the Great Moderation?
+   gold: 2403.08753v2 s11
+   1.      0.766 2403.08753v2 s26 p48 [S. 6 FURTHER EMPIRICAL RESULTS] 'period, where the relevance parameter φ1,1 is not statistically significant. However, the relevance of the tax instrument increases markedly in the Great Modera'
+   2.      0.739 2403.08753v2 s26 p49 [S. 6 FURTHER EMPIRICAL RESULTS] 'wages allowed the economy to adjust more quickly through price changes, partially mitigating the real impact of tax cuts. Further- more, during the Great Inflat'
+   3. GOLD 0.736 2403.08753v2 s11 p26 [strap repetitions.] 'Ignoring the Volatility Shift. We begin our analysis estimating the proxy-SVAR in (8)–(9) on the entire sample as in Mertens and Ravn (2014), imposing the exoge'
+
+Q: What are the four main concepts defined by XAI?
+   gold: 2407.07009v2 s3
+   1. GOLD 0.820 2407.07009v2 s3 p2 [B. XAI MAIN CONCEPTS, CATEGORIES, AND TA] 'B. XAI MAIN CONCEPTS, CATEGORIES, AND TAXONOMY XAI defines four main concepts as shown in Figure 1: (i) Interpretability: is based on the model design and it re'
+   2.      0.704 2407.07009v2 s23 p14 [V. CONCLUSION AND FUTURE PERSPECTIVES] 'better noise allocation that varies over time among the received OFDM symbols. Moreover, investigating the impact of the RNN memory size of the efficiency of th'
+   3.      0.704 2407.07009v2 s2 p2 [A. DL-BASED CHANNEL ESTIMATION] 'sensitive applications [21]. Therefore, is there a way to provide interpretability to the decision-making strategy employed DL black box models? The mentioned i'
+
+Q: Can the infimum in the representation of $\psi(x)$ be attained if $\psi(x)<\infty$?
+   gold: 2403.06613v3 s4
+   1.      0.688 2404.07128v3 s11 p43 [4. Proofs] 'from which we can conclude sup ϑ∗∈Θ∗E {ϕ(Y · Tβnfϑ∗(X))} − min f:[0,1]d1×d2→¯R E {ϕ(Y · f(X))} ≤c30 · � log L(2) n L(2) n + log L(2) n (L(1) n )2p/4 � + c32 n .'
+   2.      0.683 2403.06613v3 s7 p22 [Appendix A. Auxiliary results for maxiti] '(i) ψ is continuous from below. (ii) ψ admits the representation ψ(f) = sup µ∈ca+ 1 (S) �� f dµ −ψ∗ Cb(S)(µ) � . In combination with [15, Theorem 2.1], we obtai'
+   3.      0.683 2403.06613v3 s8 p24 [Appendix B. Auxiliary results for quanti] 'ξ ([s, ∞)) = {x ∈R: s ≤Fξ(x)}. This shows sups<t qξ(s) = qξ(t). For s < t, it holds qξ(s) ≤q+ ξ (s) ≤qξ(t), so that qξ(t) = sups<t qξ(s) ≤sups<t q+ ξ (s) ≤qξ(t)'
+
+Q: Does a firm's position within the domestic production network influence its importing decisions?
+   gold: 2405.13422v2 s14
+   1. GOLD 0.840 2405.13422v2 s14 p32 [7 Concluding remarks] 'In this paper, we examine a previously unexplored aspect of firms’ international trade behaviour, focusing on how their position within the domestic production '
+   2.      0.802 2405.13422v2 s2 p7 [2 Relation to the Literature] 'inputs (Amiti and Konings, 2007; Kasahara and Rodrigue, 2008; Halpern et al., 2015). The literature also suggests that the use of foreign intermediates promotes'
+   3.      0.799 2405.13422v2 s0 p1 [Abstract] 'arXiv:2405.13422v2 [econ.GN] 24 Feb 2025 Learning to Import through Production Networks Kenan Huremovi´c Federico Nutarelli Francesco Serti Fernando Vega-Redond'

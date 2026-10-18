@@ -1,0 +1,21 @@
+# M1 mapping quality — 43 dev source papers, 228 gold sections
+config: {'chunk_words': 300, 'overlap_words': 50, 'shingle_n': 5, 'min_match': 0.3}
+
+min_match | inherited words | gold covered | recall median | recall mean | recall<0.5
+      0.1 |           21.6% |      228/228 |          1.00 |        0.98 |          4
+      0.2 |           22.9% |      228/228 |          1.00 |        0.98 |          4
+      0.3 |           24.9% |      228/228 |          1.00 |        0.98 |          4
+      0.5 |           29.6% |      228/228 |          1.00 |        0.98 |          4
+      0.7 |           39.8% |      228/228 |          1.00 |        0.98 |          4
+
+Lowest-recall gold sections at configured min_match=0.3:
+  0.18 2411.15293v2 s1
+  0.27 2411.15293v2 s2
+  0.47 2410.01999v4 s48
+  0.48 2405.17070v2 s26
+  0.76 2404.19707v4 s25
+  0.80 2410.01999v4 s36
+  0.92 2404.19707v4 s11
+  0.92 2409.07486v2 s24
+  0.94 2407.00037v2 s16
+  0.94 2410.01999v4 s21

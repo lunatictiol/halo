@@ -69,3 +69,31 @@ Each entry: what was chosen, alternatives, why, and the number that justified it
 - **Chosen:** arXiv PDFs fetched sequentially, 3 s between requests, 5 retries with exponential backoff; HF files in parallel (8 workers). Atomic writes, PDF magic-byte validation, skips existing files.
 - **Why:** arXiv's automated-access guidance is ≤1 request / 3 s. The first run hit transient throttling (25 × HTTP 406, 46 × dropped connections out of ~585); manual retries of those URLs returned 200. A re-run against `arxiv.org` kept failing, so PDFs are now fetched from `export.arxiv.org` (arXiv's designated host for automated clients, `data.arxiv_pdf_host`); that run completed all remaining PDFs.
 - **Evidence:** `results/m0_audit.txt` — 1,000/1,000 valid PDFs present.
+
+---
+
+## M1 — Ingestion and dense index
+
+### D12. Chunk → section mapping by word 5-gram overlap, not PDF heading detection
+- **Chosen:** each PyMuPDF text block is assigned the Vectara section (`corpus/<doc_id>.json`) that contains the largest share of its lowercase word 5-grams. Blocks below `min_match` (page numbers, running headers, references, math-only lines) inherit the previous block's section. Chunks are then built inside each mapped section, so `section_id` comes from the mapping, not from a separate heading parser.
+- **Alternatives:** (a) detect headings in the PDF (font size / numbering) and match them to Vectara headings; (b) chunk Vectara's markdown directly.
+- **Why:** Vectara's sections don't follow the paper's own headings (e.g. `2401.01872v2`: 9 sections of 123–38,857 chars; its "Abstract" section also contains the introduction), so (a) would have to reproduce Vectara's segmentation from fonts — fragile. (b) has no page numbers, which M5 citations need, and removes PDF parsing as a real component (D2). Overlap mapping is exact wherever the PDF text and Vectara's markdown agree.
+- **Evidence:** `results/m1_mapping.txt` — 228/228 dev_sample gold sections have a chunk; over the 5-grams visible in the PDF text, gold-section recall is median 1.00 / mean 0.98, 4/228 below 0.5. Recall excludes 5-grams that never appear in the PDF text (LaTeX, table markdown), which no PDF parser could recover. Worst case `2411.15293v2` s1: 78% of its 5-grams also occur in s0 (Vectara duplicated the "Highlights" text), and ties go to the earlier section — an ambiguity in the labels, not a mapping error.
+
+### D13. `min_match` = 0.3, `shingle_n` = 5
+- **Chosen:** 5-word shingles; a block needs ≥30% of its 5-grams in one section to set the section.
+- **Alternatives:** swept `min_match` ∈ {0.1, 0.2, 0.3, 0.5, 0.7}.
+- **Why:** coverage (228/228) and recall (median 1.00, mean 0.98) are identical across the whole sweep; only the share of inherited words changes (21.6% → 39.8%). 0.3 sits well above the noise floor of chance 5-gram matches while inheriting only a quarter of the words. 5-grams are long enough that common phrases ("in this paper we") rarely tip a block toward the wrong section.
+- **Evidence:** `results/m1_mapping.txt` (sweep table, 24.9% inherited words at 0.3). By block count 68.8% of blocks are inherited (`results/m1_gate.txt`) — most blocks are one-line fragments (page numbers, equation lines) with too few words to match.
+
+### D14. Chunk size 300 words, 50-word overlap, chunks never cross a section
+- **Chosen:** consecutive blocks of one section are split into 300-word windows with a 50-word overlap; each chunk records the page of its first word (`page`) and last word (`page_end`).
+- **Alternatives:** token-based windows; 150 / 500 words; one chunk per section.
+- **Why:** ~300 words ≈ 400–450 tokens is well inside nomic-embed-text's context and keeps a chunk about one idea; overlap stops a sentence cut at a boundary from being lost. Never crossing sections keeps `section_id` exact and gives even tiny sections (123 chars) their own chunk — which is what makes every gold section coverable. One chunk per section was rejected because Vectara sections reach ~39k chars. **Not tuned yet:** this is a starting value, to be measured once the M2 harness exists.
+- **Evidence:** `results/m1_gate.txt` — 6,740 chunks for 103 papers (median 59 per paper).
+
+### D15. Embedding and index details
+- **Chosen:** nomic-embed-text through Ollama `/api/embed` with the `search_document: ` / `search_query: ` prefixes; Qdrant embedded mode at `data/index/qdrant`, one collection per split, cosine distance; point ID = `uuid5(paper_id, chunk_idx)`; re-ingesting a paper deletes its points and upserts new ones.
+- **Why:** nomic-embed-text was trained with those task prefixes. Deterministic IDs plus delete-then-upsert make ingestion idempotent and leave no stale chunks if a paper's chunk count changes. Plain `urllib` avoids an SDK dependency for one endpoint.
+- **Evidence:** `results/m1_gate.txt` — two consecutive runs give 6,740 → 6,740 chunks, no duplicate `(paper_id, chunk_idx)`, byte-identical ids and texts.
+- **Known limitation:** `section_title` is the first markdown heading of the Vectara section, which is sometimes a fragment (e.g. `strap repetitions.`) or misleading (`REFERENCES` on a body chunk of `2408.07379v2` s0). It is display metadata only and not used for retrieval or metrics.
