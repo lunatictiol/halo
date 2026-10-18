@@ -1,8 +1,8 @@
-"""Run the naive baseline (dense top-k -> LLM answer) on a split: retrieve -> generate -> judge -> score.
+"""Run a retrieval method -> LLM answer on a split: retrieve -> generate -> judge -> score.
 
-    uv run python -m eval.runners.run --split dev_sample
-    uv run python -m eval.runners.run --split abstention_set
-    uv run python -m eval.runners.run --split dev_sample --limit 5      # smoke test, separate run dir
+    uv run python -m eval.runners.run --split dev_sample                     # method from config
+    uv run python -m eval.runners.run --split abstention_set --method dense --name m2_baseline
+    uv run python -m eval.runners.run --split dev_sample --limit 5           # smoke test, separate run dir
 
 Each stage checkpoints per query under data/runs/<run>/ so an interrupted run resumes, and judging can be
 redone without regenerating. Checkpoints are tied to a config fingerprint; a changed config needs --fresh.
@@ -25,7 +25,7 @@ from eval.results import RESULTS_DIR, write_results
 from halo.config import load_config
 from halo.data import data_dir, load_hf, load_split
 from halo.generate.baseline import answer
-from halo.ingest.index import open_index, search
+from halo.retrieve import METHODS, Retriever
 
 STAGES = ("retrieve", "generate", "judge", "score")
 # Questions whose source paper is never indexed: the correct behaviour is to abstain (CLAUDE.md, Dataset).
@@ -41,18 +41,28 @@ def load_queries(split: str, cfg: dict) -> list[dict]:
 
 
 def retrieve_all(queries: list[dict], cfg: dict) -> dict[str, dict]:
+    """Top k_eval hits per query (with text, for generation), the full candidate ranking as (paper, section)
+    pairs (for the recall@k_candidates ceiling), and per-stage latency."""
     r = cfg["retrieve"]
-    client = open_index(cfg)
+    retriever = Retriever(cfg)
     try:
+        # Warm-up: loads the embedding model, BM25 index and reranker so query 1 is not billed for them.
+        retriever.retrieve(queries[0]["query"], r["method"])
         out = {}
-        for q in queries:
+        for n, q in enumerate(queries, 1):
             start = time.perf_counter()
-            hits = search(client, r["collection"], q["query"], r["k_eval"], cfg)
-            out[q["query_id"]] = {"retrieve_ms": round((time.perf_counter() - start) * 1000),
-                                  "hits": [{k: h[k] for k in HIT_KEYS} for h in hits]}
+            hits, stage_ms = retriever.retrieve(q["query"], r["method"])
+            out[q["query_id"]] = {"retrieve_ms": round((time.perf_counter() - start) * 1000), "stage_ms": stage_ms,
+                                  "candidates": [[h["paper_id"], h["section_id"]] for h in hits],
+                                  "hits": [{k: h[k] for k in HIT_KEYS} for h in hits[:r["k_eval"]]]}
+            if n % 50 == 0 or n == len(queries):
+                print(f"  retrieved {n}/{len(queries)}", flush=True)
         return out
     finally:
-        client.close()
+        retriever.close()
+        if r["method"] == "hybrid_rerank":
+            from halo.retrieve.rerank import release
+            release()
 
 
 def _read_jsonl(path: Path) -> dict[str, dict]:
@@ -191,7 +201,8 @@ def run(split: str, run_name: str, stages: list[str], limit: int | None, fresh: 
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--split", required=True)
-    p.add_argument("--name", default="m2_baseline")
+    p.add_argument("--name", help="run name prefix (default: m3_<method>)")
+    p.add_argument("--method", choices=METHODS, help="override [retrieve] method from the config")
     p.add_argument("--stages", default=",".join(STAGES))
     p.add_argument("--limit", type=int, help="first N queries only (smoke test; separate run directory)")
     p.add_argument("--fresh", action="store_true", help="discard this run's checkpoints first")
@@ -199,8 +210,11 @@ def main() -> None:
     stages = a.stages.split(",")
     if unknown := set(stages) - set(STAGES):
         p.error(f"unknown stages {sorted(unknown)}; choose from {STAGES}")
-    run_name = f"{a.name}_{a.split}" + (f"_limit{a.limit}" if a.limit else "")
-    run(a.split, run_name, stages, a.limit, a.fresh, load_config())
+    cfg = load_config()
+    if a.method:
+        cfg["retrieve"]["method"] = a.method  # lands in the config snapshot of the results file
+    run_name = f"{a.name or 'm3_' + cfg['retrieve']['method']}_{a.split}" + (f"_limit{a.limit}" if a.limit else "")
+    run(a.split, run_name, stages, a.limit, a.fresh, cfg)
 
 
 if __name__ == "__main__":
