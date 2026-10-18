@@ -97,3 +97,36 @@ Each entry: what was chosen, alternatives, why, and the number that justified it
 - **Why:** nomic-embed-text was trained with those task prefixes. Deterministic IDs plus delete-then-upsert make ingestion idempotent and leave no stale chunks if a paper's chunk count changes. Plain `urllib` avoids an SDK dependency for one endpoint.
 - **Evidence:** `results/m1_gate.txt` — two consecutive runs give 6,740 → 6,740 chunks, no duplicate `(paper_id, chunk_idx)`, byte-identical ids and texts.
 - **Known limitation:** `section_title` is the first markdown heading of the Vectara section, which is sometimes a fragment (e.g. `strap repetitions.`) or misleading (`REFERENCES` on a body chunk of `2408.07379v2` s0). It is display metadata only and not used for retrieval or metrics.
+
+## M2 — Eval harness and naive baseline
+
+### D16. Retrieval metrics: first gold chunk in the chunk ranking, k = 5 / 10
+- **Chosen:** the ranking is the list of chunks the retriever returns (what the generator sees). A chunk is relevant iff its `(paper_id, section_id)` equals the single qrels section; only the first such chunk counts. Reported: recall@5, recall@10 (= hit@k), MRR, nDCG@10, and a diagnostic paper-level hit@10.
+- **Alternatives:** (a) dedupe chunks to a section ranking first; (b) count every gold-section chunk as relevant (graded nDCG).
+- **Why:** with exactly one relevant section per question (DATA.md, qrels format), counting only the first gold chunk gives each query one relevant item, so the metrics have their textbook meaning: recall@k is hit@k, MRR = 1/rank, and nDCG@10 = 1/log2(rank+1) because IDCG = 1 (so nDCG@10 is close to MRR and adds little; it is kept because it is the standard BEIR-style headline). (a) would make "k" mean k sections while the generator actually gets k chunks. (b) would reward retrieving several chunks of the same section, which a long section gets for free. Paper hit@10 separates "wrong paper" from "right paper, wrong section".
+- **Evidence:** `results/m2_baseline_dev_sample.json` — recall@5 0.868, recall@10 0.927, MRR 0.707, nDCG@10 0.761; paper hit@10 0.993, so almost all misses are section-level, not paper-level. Determinism: `results/m2_gate.txt`.
+
+### D17. Answer and abstention metric definitions
+- **Chosen:** binary per-query scores averaged per slice. *Faithfulness* (judge: every claim supported by the top-5 context) over answered questions only. *Correctness* (judge vs reference answer) over all answerable questions with a refusal counted wrong, plus *correct|answered*. *False-abstention rate* on `dev_sample`; *abstention rate* on `abstention_set`. Missing values (abstained, or judge error) are excluded from means, never scored 0, and `n` is reported next to each mean.
+- **Abstention detection:** the generator must output the exact sentinel `INSUFFICIENT_EVIDENCE`; any occurrence counts. A string match, not a judge, so abstention metrics carry no judge noise.
+- **Alternatives:** a 1–5 Likert judge; RAGAS-style claim decomposition; a judge deciding whether an answer is a refusal.
+- **Why:** binary labels are easy to audit by hand (the M2 sanity check) and to explain; claim decomposition multiplies judge calls on a 17.7 tok/s local model. Splitting correctness into "all" and "answered only" keeps a model from gaming one number by refusing more.
+- **Evidence:** `results/m2_baseline_dev_sample.json` — faithfulness 0.975 (n=284), correctness 0.848 (n=303), correct|answered 0.905, false-abstention 0.063. `results/m2_baseline_abstention_set.json` — abstention rate 0.875 (n=152).
+
+### D18. LLM judge: qwen3:8b, schema-constrained JSON, reason before verdict
+- **Chosen:** the judge is the same local qwen3:8b as the generator, temperature 0, `think: false`, output constrained by an Ollama JSON schema `{reason, verdict ∈ enum}` with `reason` first. Unparseable output is retried once with a doubled token budget, then recorded as a judge error (verdict None), never guessed. Prompts are versioned in `config/default.toml` (`judge-v1`) and the judge model is written into every results file.
+- **Alternatives:** Gemini as judge (no self-preference, needs an API key and dependency); free-text verdicts parsed by regex.
+- **Why:** zero cost and no key for the MVP; swapping the judge is a config change. Schema-constrained decoding makes malformed output nearly impossible; putting the reason first makes the model state its evidence before the label. **Known risk — self-preference:** the judge grades its own model's answers. The manual sample (D20) measures this.
+- **Evidence:** 0 judge errors in 568 dev_sample calls and 19 abstention_set calls.
+
+### D19. Naive baseline settings: k_context = 5 chunks, num_ctx = 8192, thinking off
+- **Chosen:** dense top-10 is retrieved (for metrics); the top 5 chunks (~2k words) go to the generator. `num_ctx` is set explicitly to 8192 and `halo/llm.py` raises if prompt + output reach it. qwen3 thinking mode is off for generation and judging.
+- **Alternatives:** 10 chunks of context; Ollama's default context window; thinking on.
+- **Why:** 5 chunks already contain the gold section for 86.8% of questions (recall@5) while halving prompt size versus 10 — less noise for an 8B model and faster on 6 GB of VRAM. Ollama's default window is smaller than the prompt and truncates silently, which would corrupt both answers and faithfulness judgements. Thinking multiplies output tokens at 17.7 tok/s (`results/m0_llm_bench.json`).
+- **Evidence:** `results/m2_baseline_dev_sample.json` (`generator_tokens`, `latency_ms_median`): max prompt 3,332 tokens of 8,192, max output 130 tokens, median generation 9.2 s/query.
+- **Not tuned:** k_context is a starting value; varying it is an M3/M4 ablation.
+- **Traceability note:** generation and judging ran at commit `701e3d2`; the results files were re-scored (score stage only, no LLM calls) at the commit that added `generator_tokens`, which is the commit they record.
+
+### D20. Judge sanity check (manual review of 10 verdicts) — PENDING
+- **Status:** `results/m2_judge_sample.md` holds 10 verdicts (5 faithfulness, 5 correctness; up to 2 negatives per kind oversampled, seed 20261015). The manual agree/disagree review has **not been done yet**, so no agreement rate is recorded. This entry is filled in once it is.
+- **Why it matters:** faithfulness is 0.975 overall and 1.000 on abstractive questions with a self-grading judge (D18) — possible leniency. If agreement is low, options are a stricter judge prompt (`judge-v2`) or a Gemini judge before M3 numbers are produced.
