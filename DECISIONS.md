@@ -130,3 +130,49 @@ Each entry: what was chosen, alternatives, why, and the number that justified it
 ### D20. Judge sanity check (manual review of 10 verdicts) — PENDING
 - **Status:** `results/m2_judge_sample.md` holds 10 verdicts (5 faithfulness, 5 correctness; up to 2 negatives per kind oversampled, seed 20261015). The manual agree/disagree review has **not been done yet**, so no agreement rate is recorded. This entry is filled in once it is.
 - **Why it matters:** faithfulness is 0.975 overall and 1.000 on abstractive questions with a self-grading judge (D18) — possible leniency. If agreement is low, options are a stricter judge prompt (`judge-v2`) or a Gemini judge before M3 numbers are produced.
+
+---
+
+## M3 — Hybrid retrieval and reranking
+
+All numbers below: `dev_sample` (n=303), from `results/m3_ablation.md` and the `results/m3_retrieval_*_dev_sample.json` files it cites, unless stated otherwise.
+
+### D21. BM25: `bm25s`, k1 = 1.5, b = 0.75, English stemming + stopwords, built from the Qdrant payloads
+- **Chosen:** `bm25s` (sparse-matrix BM25) with PyStemmer English stemming and English stopwords, Lucene-default k1/b. The index is rebuilt in memory per process from the Qdrant payloads, so BM25 and dense always rank exactly the same 6,740 chunks.
+- **Alternatives:** `rank_bm25` (simpler, but scores every document in Python per query: slow at 100k chunks in M6); Qdrant sparse vectors (one store, but more moving parts); a persisted BM25 index (faster startup, but can go stale after re-ingestion).
+- **Why:** `bm25s` is fast at full-corpus scale and has no server. Rebuilding takes seconds, and this way the two indexes can never drift apart. Persisting the index is left until the API (M6) makes startup time matter. k1/b are not tuned: tuning them on the 303 dev questions would be fitting noise.
+- **Evidence:** BM25 alone **beats dense**: R@5 0.924 vs 0.868, MRR 0.758 vs 0.707, median latency 0.2 ms vs 53 ms. Likely reason: Open RAG Bench questions are LLM-generated from the gold section, so they reuse its wording (high lexical overlap). Real user questions paraphrase more, so this advantage may not transfer.
+
+### D22. Fusion: RRF with k = 60, 50 candidates per retriever
+- **Chosen:** Reciprocal Rank Fusion, score = Σ 1/(60 + rank), over dense top-50 and BM25 top-50; the fused list is cut to 50. Ties are broken on (paper_id, chunk_idx) so the order is deterministic.
+- **Alternatives:** score fusion (min-max normalised or weighted sum of cosine and BM25 scores); weighted RRF; a tuned k.
+- **Why:** RRF only uses ranks, so cosine and BM25 scores never need calibrating against each other. k = 60 is the constant from Cormack et al. (2009) and the usual default. Not tuned, for the same reason as D21. 50 candidates give the reranker a ceiling of R@50 = 0.990 (dense alone: 0.980).
+- **Evidence (honest result):** hybrid beats dense on every metric (R@5 0.908, R@10 0.967, MRR 0.759) but does **not** beat BM25 alone on R@5 (0.908 vs 0.924); MRR is equal (0.759 vs 0.758). Per query: 13 questions are top-5 for BM25 only, and equal-weight fusion with the weaker dense ranking pushes them out. Fusion regains only 8 dense-only hits. Weighting BM25 higher would probably fix this. It was not tried, because the reranker (D23) removes the gap, and a weight tuned on this benchmark's lexical bias would not generalise.
+
+### D23. Reranker: `BAAI/bge-reranker-v2-m3`, fp16, max_length 512, batch 16
+- **Chosen:** sentence-transformers `CrossEncoder` running in fp16 on the RTX 4050. It scores all 50 fused candidates; top 10 are kept for metrics, top 5 go to the generator. Its VRAM is released before generation so qwen3:8b keeps the GPU.
+- **Alternatives:** `ms-marco-MiniLM-L-6-v2` (22M parameters, much faster, English MS MARCO web data); `bge-reranker-base` (278M). Neither was measured.
+- **Why:** v2-m3 is a strong general-purpose reranker that fits in about 1.1 GB at fp16. 300-word chunks are about 400 tokens, so 512 holds query + chunk in nearly all cases.
+- **Evidence:** hybrid → hybrid + rerank: MRR 0.759 → **0.830**, R@5 0.908 → 0.944, nDCG@10 0.810 → 0.865. The gain holds on every slice, including text-table-image MRR (0.576 → 0.784, n=14). Cost: median rerank 807 ms per query (p95 826 ms), 95% of retrieval time.
+
+### D24. Chosen configuration: `hybrid_rerank`
+- **Ablation (dev_sample):**
+
+  | Method | R@5 | R@10 | MRR | nDCG@10 | median ms |
+  |---|---|---|---|---|---|
+  | dense | 0.868 | 0.927 | 0.707 | 0.761 | 53 |
+  | bm25 | 0.924 | 0.960 | 0.758 | 0.808 | 0.2 |
+  | hybrid | 0.908 | 0.967 | 0.759 | 0.810 | 53 |
+  | hybrid_rerank | **0.944** | **0.970** | **0.830** | **0.865** | 849 |
+  | bm25_rerank | 0.941 | 0.967 | 0.827 | 0.862 | 836 |
+
+- **Why hybrid_rerank over bm25_rerank:** the two are tied (paired gold ranks: 1 query better, 1 worse). Dense adds about 45 ms to an 800 ms query and covers paraphrased questions, where BM25 has no word overlap to match on. This benchmark under-represents those questions (D21), so their value is a stated **hypothesis, not a measured gain**. Dropping dense remains an option if latency ever matters more.
+- **Answer metrics, M2 baseline → M3** (`results/m2_baseline_*.json` → `results/m3_hybrid_rerank_*.json`, same generator, prompts and judge): correctness 0.848 → **0.908**, false-abstention 0.063 → **0.020**, faithfulness 0.975 → 0.987, text-modality correctness 0.868 → 0.951.
+- **Regression:** abstention rate on `abstention_set` fell from 0.875 to **0.809** (n=152). The number of answered questions the judge rated supported, i.e. spot-check candidates, rose from 14 to 23. Better retrieval surfaces passages from indexed papers that are closer to the held-out question, and the generator answers from them instead of refusing. Retrieval cannot fix this. It is exactly what M4's evidence grader is meant to catch, and M4 is measured against these numbers.
+- **Determinism:** the hybrid_rerank gold rank of every one of the 303 queries is identical between the ablation run and the independent retrieve stage of the answer run (two processes, fp16 GPU reranking).
+- **Not caused by M3:** median generation time on dev_sample went from 9.2 s to 13.7 s, with prompt and output token counts nearly unchanged (median prompt 2,126 → 2,266, output 51 → 55). On abstention_set it went down instead (5.0 → 3.3 s), so this is machine-level variance, not the retrieval change.
+
+### D25. Ollama URL: `127.0.0.1`, not `localhost`
+- **Chosen:** `ollama_url = "http://127.0.0.1:11434"`.
+- **Why:** on Windows, `localhost` resolves to IPv6 `::1` first; Ollama listens on IPv4 only, so every request waited about 2 s before falling back. Measured with the same embed call: 2,128–2,162 ms via `localhost`, 57–98 ms via `127.0.0.1`.
+- **Evidence:** the M2 baseline's median retrieve latency (2,184 ms, `results/m2_baseline_dev_sample.json`) was almost entirely this delay. Dense retrieval is now 53 ms median. It also added about 2 s to every M2 generation and judge call. Quality metrics are unaffected (the dense ablation row reproduces M2's retrieval metrics exactly).

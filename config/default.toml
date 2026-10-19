@@ -20,7 +20,8 @@ dev_distractors = 60
 [models]
 llm = "qwen3:8b"
 embedding = "nomic-embed-text"
-ollama_url = "http://localhost:11434"
+# 127.0.0.1, not localhost: on Windows "localhost" tries IPv6 ::1 first and adds ~2 s to every call (D25).
+ollama_url = "http://127.0.0.1:11434"
 
 [ingest]
 # Chunk = consecutive PDF blocks of one Vectara section, split into word windows (DECISIONS.md D12-D13).
@@ -57,6 +58,26 @@ collection = "dev_slice"
 k_eval = 10
 k_context = 5
 recall_ks = [5, 10]
+# dense | bm25 | hybrid (RRF of dense + BM25) | hybrid_rerank (cross-encoder over the fused list). DECISIONS.md D24.
+method = "hybrid_rerank"
+# Each retriever returns this many; RRF output is cut to it before reranking (D22). Recall@k_candidates is
+# reported as the ceiling a reranker can reach.
+k_candidates = 50
+# RRF constant from Cormack et al. (2009); damps the weight of top ranks so one retriever cannot dominate (D22).
+rrf_k = 60
+
+[bm25]
+# bm25s defaults (Robertson/Lucene k1 and b); stemming + English stopwords (D21).
+k1 = 1.5
+b = 0.75
+stemmer = "english"
+stopwords = "en"
+
+[rerank]
+model = "BAAI/bge-reranker-v2-m3"
+# 300-word chunks are ~400 tokens; 512 fits query + chunk without truncating chunk text in most cases (D23).
+max_length = 512
+batch_size = 16
 
 [generate]
 prompt_version = "baseline-v1"
