@@ -4,53 +4,16 @@ Verdicts are binary labels plus a one-sentence reason, requested as schema-const
 reason first so the model states its evidence before committing to a label (DECISIONS.md D18).
 """
 
-import json
-import re
-
 from halo.generate.baseline import format_context
-from halo.llm import chat
+from halo.llm import VerdictParseError as JudgeParseError, classify, parse_verdict  # noqa: F401 (re-exported)
 
 FAITHFULNESS = ("supported", "unsupported")
 CORRECTNESS = ("correct", "incorrect")
-_FENCE = re.compile(r"^```(?:json)?\s*|\s*```$")
-
-
-class JudgeParseError(ValueError):
-    pass
-
-
-def _schema(allowed: tuple[str, ...]) -> dict:
-    return {"type": "object", "required": ["reason", "verdict"],
-            "properties": {"reason": {"type": "string"}, "verdict": {"type": "string", "enum": list(allowed)}}}
-
-
-def parse_verdict(text: str, allowed: tuple[str, ...]) -> tuple[str, str]:
-    try:
-        obj = json.loads(_FENCE.sub("", text.strip()))
-    except json.JSONDecodeError as e:
-        raise JudgeParseError(f"not JSON: {text[:80]!r}") from e
-    if not isinstance(obj, dict) or not isinstance(obj.get("verdict"), str):
-        raise JudgeParseError(f"no verdict field: {text[:80]!r}")
-    verdict = obj["verdict"].strip().lower()
-    if verdict not in allowed:
-        raise JudgeParseError(f"verdict {verdict!r} not in {allowed}")
-    return verdict, str(obj.get("reason", "")).strip()
 
 
 def _judge(prompt: str, allowed: tuple[str, ...], cfg: dict) -> dict:
-    """Ask, retrying on unparseable output. A persistent failure is recorded (verdict None), not guessed.
-    Decoding is greedy, so a retry only differs by a larger token budget (the likely cause is truncated JSON)."""
     j = cfg["judge"]
-    errors = []
-    for attempt in range(1 + j["parse_retries"]):
-        resp = chat(j["system_prompt"], prompt, j["model"], j["max_tokens"] * (attempt + 1), cfg,
-                    schema=_schema(allowed))
-        try:
-            verdict, reason = parse_verdict(resp["content"], allowed)
-            return {"verdict": verdict, "reason": reason, "ms": resp["ms"]}
-        except JudgeParseError as e:
-            errors.append(str(e))
-    return {"verdict": None, "reason": f"judge_error: {errors[-1]}", "ms": None}
+    return classify(j["system_prompt"], prompt, allowed, j["model"], j["max_tokens"], j["parse_retries"], cfg)
 
 
 def judge_faithfulness(question: str, answer: str, chunks: list[dict], cfg: dict) -> dict:
