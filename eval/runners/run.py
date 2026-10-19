@@ -1,9 +1,11 @@
-"""Run a retrieval method -> LLM answer on a split: retrieve -> generate -> judge -> score.
+"""Run a pipeline on a split and score it: retrieve -> generate -> judge -> score.
 
     uv run python -m eval.runners.run --split dev_sample                     # method from config
+    uv run python -m eval.runners.run --split dev_sample --pipeline graph     # M4 corrective loop
     uv run python -m eval.runners.run --split abstention_set --method dense --name m2_baseline
     uv run python -m eval.runners.run --split dev_sample --limit 5           # smoke test, separate run dir
 
+With --pipeline graph, one `graph` stage (halo/graph/pipeline.py) replaces retrieve + generate.
 Each stage checkpoints per query under data/runs/<run>/ so an interrupted run resumes, and judging can be
 redone without regenerating. Checkpoints are tied to a config fingerprint; a changed config needs --fresh.
 """
@@ -28,6 +30,7 @@ from halo.generate.baseline import answer
 from halo.retrieve import METHODS, Retriever
 
 STAGES = ("retrieve", "generate", "judge", "score")
+GRAPH_STAGES = ("graph", "judge", "score")
 # Questions whose source paper is never indexed: the correct behaviour is to abstain (CLAUDE.md, Dataset).
 ABSTENTION_SPLITS = {"abstention_set"}
 HIT_KEYS = ("paper_id", "section_id", "section_title", "page", "chunk_idx", "score", "text")
@@ -95,6 +98,64 @@ def generate_all(queries: list[dict], retrieved: dict, path: Path, cfg: dict) ->
             print(f"  generated {n}/{len(todo)}", flush=True)
 
 
+def graph_all(queries: list[dict], path: Path, cfg: dict) -> None:
+    """Run the corrective loop per query; the record keeps the full node trace (queries, grades, reasons)."""
+    from halo.graph.pipeline import build_graph, default_nodes
+    todo = _pending(queries, _read_jsonl(path), "graph")
+    if not todo:
+        return
+    retriever = Retriever(cfg)
+    graph = build_graph(default_nodes(retriever, cfg), cfg["graph"]["max_retries"])
+    try:
+        for n, q in enumerate(todo, 1):
+            start = time.perf_counter()
+            out = graph.invoke({"question": q["query"]})
+            gen = out.get("generation") or {}
+            _append_jsonl(path, {
+                "query_id": q["query_id"], "answer": out["answer"], "abstained": out["abstained"],
+                "abstain_reason": out["abstain_reason"],
+                "abstained_by": ("generator" if gen else "grader") if out["abstained"] else None,
+                "retries": out["attempts"] - 1, "graph_ms": round((time.perf_counter() - start) * 1000),
+                "hits": [{k: h[k] for k in HIT_KEYS} for h in out["hits"]],
+                "generate_ms": gen.get("ms"), "prompt_tokens": gen.get("prompt_tokens"),
+                "output_tokens": gen.get("output_tokens"), "trace": out["trace"]})
+            if n % 10 == 0 or n == len(todo):
+                print(f"  graph {n}/{len(todo)}", flush=True)
+    finally:
+        retriever.close()
+
+
+def graph_views(graphed: dict[str, dict]) -> dict[str, dict]:
+    """The retrieve-stage shape judge_all and score consume. Retrieval metrics use the final attempt's hits
+    (the context the answer was generated from); retrieve_ms sums retrieve + rerank over all attempts."""
+    return {qid: {"hits": g["hits"],
+                  "retrieve_ms": sum(t["ms"] for t in g["trace"] if t["node"] in ("retrieve", "rerank"))}
+            for qid, g in graphed.items()}
+
+
+def graph_record(rec: dict, g: dict, cfg: dict, answerable: bool) -> dict:
+    """Loop-specific per-query fields; first_* retrieval metrics are on attempt 1 (= M3 without the loop)."""
+    r = cfg["retrieve"]
+    out = {"retries": g["retries"], "abstained_by": g["abstained_by"], "abstain_reason": g["abstain_reason"],
+           "graph_ms": g["graph_ms"], "trace": g["trace"]}
+    if answerable:
+        first = [tuple(x) for x in next(t["top"] for t in g["trace"] if t["node"] == "rerank")]
+        m = query_metrics(first, tuple(rec["gold"]), tuple(r["recall_ks"]), r["k_eval"], r["k_eval"])
+        out |= {f"first_{k}": v for k, v in m.items()}
+    return rec | out
+
+
+def graph_summary(recs: list[dict], cfg: dict) -> dict:
+    """Gate check: no query may exceed max_retries (counted from the trace, independently of the router)."""
+    max_retries = cfg["graph"]["max_retries"]
+    retrievals = [sum(t["node"] == "retrieve" for t in r["trace"]) for r in recs]
+    return {"max_retries": max_retries, "retries_mean": round(statistics.mean(r["retries"] for r in recs), 4),
+            "retries_histogram": {str(n): sum(r["retries"] == n for r in recs) for n in range(max_retries + 1)},
+            "queries_over_retry_limit": sum(n > max_retries + 1 for n in retrievals),
+            "abstained_by": {k: sum(r["abstained_by"] == k for r in recs) for k in ("grader", "generator")},
+            "graph_ms_median": statistics.median(r["graph_ms"] for r in recs)}
+
+
 def judge_all(queries: list[dict], retrieved: dict, generated: dict, path: Path, cfg: dict, answerable: bool) -> None:
     """Faithfulness for every non-abstained answer; correctness only where a reference answer is valid."""
     k = cfg["retrieve"]["k_context"]
@@ -138,21 +199,29 @@ def metric_names(cfg: dict, answerable: bool) -> list[str]:
 
 def _token_stats(gens: list[dict]) -> dict:
     """Shows how close prompts came to num_ctx (truncation guard) and how long answers were."""
+    gens = [g for g in gens if g["prompt_tokens"] is not None]  # graph: grader abstentions never call the generator
     prompt, output = [g["prompt_tokens"] for g in gens], [g["output_tokens"] for g in gens]
     return {"prompt_median": statistics.median(prompt), "prompt_max": max(prompt),
             "output_median": statistics.median(output), "output_max": max(output)}
 
 
-def score(split: str, queries: list[dict], retrieved: dict, generated: dict, judged: dict, cfg: dict) -> dict:
+def score(split: str, queries: list[dict], retrieved: dict, generated: dict, judged: dict, cfg: dict,
+          graphed: dict | None = None) -> dict:
     answerable = split not in ABSTENTION_SPLITS
     recs = [per_query_record(q, retrieved[q["query_id"]], generated[q["query_id"]], judged[q["query_id"]], cfg, answerable)
             for q in queries]
+    names = metric_names(cfg, answerable)
+    if graphed is not None:
+        recs = [graph_record(rec, graphed[rec["query_id"]], cfg, answerable) for rec in recs]
+        names += ["retries"]
+        if answerable:
+            names += [f"first_recall@{k}" for k in cfg["retrieve"]["recall_ks"]] + ["first_mrr"]
     verdicts = [v for r in recs for v in (r["faithfulness"], r["correctness"]) if v is not None]
     payload = {
         "split": split, "kind": "answerable" if answerable else "abstention", "n_queries": len(recs),
-        "metrics": summarize(recs, metric_names(cfg, answerable)),
+        "metrics": summarize(recs, names),
         "latency_ms_median": {"retrieve": statistics.median(r["retrieve_ms"] for r in recs),
-                              "generate": statistics.median(r["generate_ms"] for r in recs)},
+                              "generate": statistics.median(r["generate_ms"] for r in recs if r["generate_ms"] is not None)},
         "judge_calls": len(verdicts), "judge_errors": sum(v["verdict"] is None for v in verdicts),
         "generator_tokens": _token_stats([generated[q["query_id"]] for q in queries]),
     }
@@ -160,6 +229,8 @@ def score(split: str, queries: list[dict], retrieved: dict, generated: dict, jud
         # Answered *and* judged supported: another indexed paper may genuinely answer it (CLAUDE.md spot-check).
         payload["abstention_spot_check"] = [
             {k: r[k] for k in ("query_id", "query", "answer", "retrieved")} for r in recs if r["faithful"] == 1.0]
+    if graphed is not None:
+        payload["graph"] = graph_summary(recs, cfg)
     return payload | {"per_query": recs}
 
 
@@ -179,20 +250,30 @@ def prepare_run_dir(run_name: str, cfg: dict, fresh: bool) -> Path:
     return run_dir
 
 
-def run(split: str, run_name: str, stages: list[str], limit: int | None, fresh: bool, cfg: dict) -> None:
+def run(split: str, run_name: str, stages: list[str], limit: int | None, fresh: bool, cfg: dict,
+        pipeline: str = "single") -> None:
     queries = load_queries(split, cfg)[:limit]
     run_dir = prepare_run_dir(run_name, cfg, fresh)
     ret_path, gen_path, jud_path = run_dir / "retrieve.json", run_dir / "generate.jsonl", run_dir / "judge.jsonl"
-    if "retrieve" in stages or not ret_path.exists():
-        ret_path.write_text(json.dumps(retrieve_all(queries, cfg), ensure_ascii=False), encoding="utf-8")
-        print(f"retrieve: {len(queries)} queries", flush=True)
-    retrieved = json.loads(ret_path.read_text(encoding="utf-8"))
-    if "generate" in stages:
-        generate_all(queries, retrieved, gen_path, cfg)
+    graphed = None
+    if pipeline == "graph":
+        graph_path = run_dir / "graph.jsonl"
+        if "graph" in stages:
+            graph_all(queries, graph_path, cfg)
+        graphed = _read_jsonl(graph_path)
+        retrieved, generated = graph_views(graphed), graphed
+    else:
+        if "retrieve" in stages or not ret_path.exists():
+            ret_path.write_text(json.dumps(retrieve_all(queries, cfg), ensure_ascii=False), encoding="utf-8")
+            print(f"retrieve: {len(queries)} queries", flush=True)
+        retrieved = json.loads(ret_path.read_text(encoding="utf-8"))
+        if "generate" in stages:
+            generate_all(queries, retrieved, gen_path, cfg)
+        generated = _read_jsonl(gen_path)
     if "judge" in stages:
-        judge_all(queries, retrieved, _read_jsonl(gen_path), jud_path, cfg, split not in ABSTENTION_SPLITS)
+        judge_all(queries, retrieved, generated, jud_path, cfg, split not in ABSTENTION_SPLITS)
     if "score" in stages:
-        payload = score(split, queries, retrieved, _read_jsonl(gen_path), _read_jsonl(jud_path), cfg)
+        payload = score(split, queries, retrieved, generated, _read_jsonl(jud_path), cfg, graphed)
         # Partial (--limit) runs stay out of the committed results/ directory.
         out_dir = run_dir if limit else RESULTS_DIR
         print(f"score: wrote {write_results(run_name, payload, cfg, out_dir)}")
@@ -201,20 +282,24 @@ def run(split: str, run_name: str, stages: list[str], limit: int | None, fresh: 
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--split", required=True)
-    p.add_argument("--name", help="run name prefix (default: m3_<method>)")
+    p.add_argument("--name", help="run name prefix (default: m3_<method>, or m4_graph)")
     p.add_argument("--method", choices=METHODS, help="override [retrieve] method from the config")
-    p.add_argument("--stages", default=",".join(STAGES))
+    p.add_argument("--pipeline", choices=("single", "graph"), default="single",
+                   help="single: one retrieval + one answer (M2/M3); graph: M4 corrective loop")
+    p.add_argument("--stages", help=f"default: {','.join(STAGES)} (single) or {','.join(GRAPH_STAGES)} (graph)")
     p.add_argument("--limit", type=int, help="first N queries only (smoke test; separate run directory)")
     p.add_argument("--fresh", action="store_true", help="discard this run's checkpoints first")
     a = p.parse_args()
-    stages = a.stages.split(",")
-    if unknown := set(stages) - set(STAGES):
-        p.error(f"unknown stages {sorted(unknown)}; choose from {STAGES}")
+    allowed = GRAPH_STAGES if a.pipeline == "graph" else STAGES
+    stages = a.stages.split(",") if a.stages else list(allowed)
+    if unknown := set(stages) - set(allowed):
+        p.error(f"unknown stages {sorted(unknown)}; choose from {allowed}")
     cfg = load_config()
     if a.method:
         cfg["retrieve"]["method"] = a.method  # lands in the config snapshot of the results file
-    run_name = f"{a.name or 'm3_' + cfg['retrieve']['method']}_{a.split}" + (f"_limit{a.limit}" if a.limit else "")
-    run(a.split, run_name, stages, a.limit, a.fresh, cfg)
+    default_name = "m4_graph" if a.pipeline == "graph" else "m3_" + cfg["retrieve"]["method"]
+    run_name = f"{a.name or default_name}_{a.split}" + (f"_limit{a.limit}" if a.limit else "")
+    run(a.split, run_name, stages, a.limit, a.fresh, cfg, a.pipeline)
 
 
 if __name__ == "__main__":
