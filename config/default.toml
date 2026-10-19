@@ -47,6 +47,9 @@ seed = 0
 num_ctx = 8192
 # qwen3 "thinking" multiplies output tokens ~5-10x at 17.7 tok/s; off for every M2 call (DECISIONS.md D19).
 think = false
+# Ollama GPU layers for qwen3:8b (36 layers). Ollama's automatic choice (~23) ignores the reranker's VRAM, so both
+# spill into shared memory once the M4 loop alternates them; 22 measured fastest (D29, results/m4_rerank_device_bench.json).
+num_gpu = 22
 timeout_seconds = 600
 # Ollama can 500 while swapping models in/out of VRAM; retry with linear backoff.
 http_retries = 3
@@ -78,6 +81,8 @@ model = "BAAI/bge-reranker-v2-m3"
 # 300-word chunks are ~400 tokens; 512 fits query + chunk without truncating chunk text in most cases (D23).
 max_length = 512
 batch_size = 16
+# auto (GPU if present) | cuda | cpu. GPU: 1.4 s vs 39.7 s per query on CPU, identical top-5 (D29).
+device = "cuda"
 
 [generate]
 prompt_version = "baseline-v1"
@@ -123,3 +128,40 @@ QUESTION: {question}
 REFERENCE: {reference}
 
 CANDIDATE: {answer}"""
+
+[graph]
+# M4 corrective loop: retrieve -> rerank -> grade -> (rewrite -> retrieve)* -> generate | abstain (D26-D28).
+# Retries after the first attempt; 2 means at most 3 retrieval attempts per question.
+max_retries = 2
+# First-stage retrieval inside the loop; the rerank node always follows it.
+retrieve_method = "hybrid"
+grade_prompt_version = "grade-v1"
+grade_max_tokens = 150
+grade_parse_retries = 1
+grade_system_prompt = """You check whether passages retrieved from research papers contain the information needed to answer \
+a question. Respond only with JSON containing "reason" (one sentence) and "verdict"."""
+grade_prompt = """Decide whether the PASSAGES contain the specific information needed to answer the QUESTION.
+- "sufficient": at least one passage states the facts the answer needs, or they follow directly from it.
+- "insufficient": the passages are only on a related topic, describe a different method, model, dataset or paper \
+than the one the question is about, or leave out the key fact.
+Do not answer the question and do not use outside knowledge. If insufficient, the reason must name what is missing.
+
+QUESTION: {question}
+
+PASSAGES:
+{context}"""
+rewrite_prompt_version = "rewrite-v1"
+rewrite_max_tokens = 60
+rewrite_system_prompt = """You write search queries for a keyword + semantic search engine over research papers. \
+Output only the new query, on one line, with no explanation."""
+rewrite_prompt = """A search did not find passages that answer the question.
+
+QUESTION: {question}
+
+QUERIES ALREADY TRIED:
+{tried}
+
+WHY THE RESULTS FELL SHORT: {reason}
+
+Write one new search query that is more likely to retrieve the passage answering the question. Use the specific \
+technical terms, method names and quantities the answer would contain. Do not repeat a query already tried."""
