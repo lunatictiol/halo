@@ -1,7 +1,8 @@
 """M4 report: corrective loop vs M3 (same retrieval, generator, prompts and judge), loop statistics, and the
 README examples (rescued first retrievals, correct abstentions).
 
-    uv run python -m eval.report.m4_report        # -> results/m4_report.md
+    uv run python -m eval.report.m4_report                 # -> results/m4_report.md
+    uv run python -m eval.report.m4_report m4_graph_v2     # -> results/m4_graph_v2_report.md
 """
 
 import json
@@ -10,7 +11,7 @@ import sys
 from eval.report.summary import ABSTENTION_SPLIT, ANSWERABLE_SPLIT
 from eval.results import RESULTS_DIR
 
-BASE, LOOP = "m3_hybrid_rerank", "m4_graph"
+BASE, LOOP = "m3_hybrid_rerank", sys.argv[1] if len(sys.argv) > 1 else "m4_graph"
 N_EXAMPLES = 5
 ROWS = [("correct", "Correct"), ("correct_if_answered", "Correct|ans"), ("faithful", "Faithful"),
         ("abstained", "False-abstention"), ("mrr", "MRR (context used)"), ("recall@5", "R@5 (context used)")]
@@ -129,7 +130,7 @@ def build() -> str:
 def main() -> None:
     sys.stdout.reconfigure(encoding="utf-8")
     text = build()
-    (RESULTS_DIR / "m4_report.md").write_text(text, encoding="utf-8")
+    (RESULTS_DIR / ("m4_report.md" if LOOP == "m4_graph" else f"{LOOP}_report.md")).write_text(text, encoding="utf-8")
     print(text)
 
 

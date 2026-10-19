@@ -135,15 +135,14 @@ CANDIDATE: {answer}"""
 max_retries = 2
 # First-stage retrieval inside the loop; the rerank node always follows it.
 retrieve_method = "hybrid"
-grade_prompt_version = "grade-v1"
+grade_prompt_version = "grade-v2"  # v1 refused 26/303 answerable, mostly "not explicitly stated" (D27)
 grade_max_tokens = 150
 grade_parse_retries = 1
 grade_system_prompt = """You check whether passages retrieved from research papers contain the information needed to answer \
 a question. Respond only with JSON containing "reason" (one sentence) and "verdict"."""
-grade_prompt = """Decide whether the PASSAGES contain the specific information needed to answer the QUESTION.
-- "sufficient": at least one passage states the facts the answer needs, or they follow directly from it.
-- "insufficient": the passages are only on a related topic, describe a different method, model, dataset or paper \
-than the one the question is about, or leave out the key fact.
+grade_prompt = """Decide whether the PASSAGES give enough to answer the QUESTION.
+- "sufficient": the passages cover the subject the question asks about (the same method, model, concept or result), and an answer can be stated, summarised or reasonably inferred from what they say. The passages do not need to state the answer in the question's own words.
+- "insufficient": the passages are about a different method, model, dataset or paper than the one the question names, or the key entity or quantity the question asks about does not appear in them at all.
 Do not answer the question and do not use outside knowledge. If insufficient, the reason must name what is missing.
 
 QUESTION: {question}
