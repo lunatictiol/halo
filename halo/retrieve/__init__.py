@@ -6,7 +6,7 @@ from halo.ingest.index import all_payloads, open_index, search
 from halo.retrieve.bm25 import BM25Index
 from halo.retrieve.fusion import rrf
 
-METHODS = ("dense", "bm25", "hybrid", "hybrid_rerank")
+METHODS = ("dense", "bm25", "hybrid", "hybrid_rerank", "bm25_rerank")
 
 
 class Retriever:
@@ -43,15 +43,18 @@ class Retriever:
         # ponytail: dense and BM25 run sequentially; BM25 takes milliseconds, so threading saves ~nothing.
         if method == "dense":
             return timed("dense", search, self.client, self.collection, query, k, self.cfg), ms
-        if method == "bm25":
-            return timed("bm25", self.bm25.search, query, k), ms
-        dense = timed("dense", search, self.client, self.collection, query, k, self.cfg)
         sparse = timed("bm25", self.bm25.search, query, k)
-        fused = timed("fuse", lambda: rrf([dense, sparse], r["rrf_k"])[:k])
-        if method == "hybrid":
-            return fused, ms
+        if method == "bm25":
+            return sparse, ms
+        if method == "bm25_rerank":
+            candidates = sparse
+        else:
+            dense = timed("dense", search, self.client, self.collection, query, k, self.cfg)
+            candidates = timed("fuse", lambda: rrf([dense, sparse], r["rrf_k"])[:k])
+            if method == "hybrid":
+                return candidates, ms
         from halo.retrieve.rerank import rerank  # torch import is slow; only pay for it when reranking
-        return timed("rerank", rerank, query, fused, self.cfg), ms
+        return timed("rerank", rerank, query, candidates, self.cfg), ms
 
     def close(self) -> None:
         self.client.close()

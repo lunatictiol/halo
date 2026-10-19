@@ -122,7 +122,10 @@ def main() -> None:
     if unknown := set(methods) - set(METHODS):
         p.error(f"unknown methods {sorted(unknown)}; choose from {METHODS}")
     cfg = load_config()
-    results = {m: evaluate(m, a.split, cfg) for m in methods}
+    fresh = {m: evaluate(m, a.split, cfg) for m in methods}
+    # The table covers every method with a results file, so one method can be (re)run on its own.
+    results = {m: fresh.get(m) or json.loads(p.read_text(encoding="utf-8")) for m in METHODS
+               if m in fresh or (p := RESULTS_DIR / f"m3_retrieval_{m}_{a.split}.json").exists()}
     md = report(results, a.split)
     out = RESULTS_DIR / "m3_ablation.md"
     out.write_text(md, encoding="utf-8")

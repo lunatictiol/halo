@@ -60,7 +60,7 @@ def retrieve_all(queries: list[dict], cfg: dict) -> dict[str, dict]:
         return out
     finally:
         retriever.close()
-        if r["method"] == "hybrid_rerank":
+        if r["method"].endswith("_rerank"):
             from halo.retrieve.rerank import release
             release()
 
