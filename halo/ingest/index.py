@@ -11,6 +11,8 @@ from halo.data import load_corpus_doc, pdf_dir
 from halo.ingest.pdf import read_blocks
 from halo.ingest.sections import chunk_blocks, map_blocks, section_title
 
+NO_SECTION = -1
+
 
 def embed(texts: list[str], prefix: str, cfg: dict) -> list[list[float]]:
     """Embed with Ollama's /api/embed (one batched request)."""
@@ -35,11 +37,15 @@ def paper_chunks(paper_id: str, cfg: dict) -> tuple[list[dict], list[dict]]:
     """(chunks with full metadata, per-block mapping results) for one paper."""
     ing = cfg["ingest"]
     sections = load_corpus_doc(paper_id, cfg)["sections"]
-    if not sections:
-        raise ValueError(f"{paper_id}: corpus doc has no sections to map to")
-    titles = {s["section_id"]: section_title(s["text"]) for s in sections}
     blocks = read_blocks(pdf_dir(cfg) / f"{paper_id}.pdf")
-    mapping = map_blocks([b["text"] for b in blocks], sections, ing["shingle_n"], ing["min_match"])
+    if sections:
+        titles = {s["section_id"]: section_title(s["text"]) for s in sections}
+        mapping = map_blocks([b["text"] for b in blocks], sections, ing["shingle_n"], ing["min_match"])
+    else:
+        # 3 distractors have no Vectara sections (DATA.md) and no questions: still indexed as noise,
+        # under section -1, so the full corpus keeps all 980 indexable papers (D36).
+        titles = {NO_SECTION: ""}
+        mapping = [{"section_id": NO_SECTION, "score": 0.0, "inherited": True} for _ in blocks]
     mapped = [{**b, "section_id": m["section_id"]} for b, m in zip(blocks, mapping)]
     chunks = [
         {"paper_id": paper_id, "chunk_idx": i, "section_title": titles[c["section_id"]], **c}

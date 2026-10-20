@@ -117,11 +117,14 @@ def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--split", default="dev_sample")
     p.add_argument("--methods", default=",".join(METHODS))
+    p.add_argument("--collection", help="override [retrieve] collection; the M3 ablation used dev_slice")
     a = p.parse_args()
     methods = a.methods.split(",")
     if unknown := set(methods) - set(METHODS):
         p.error(f"unknown methods {sorted(unknown)}; choose from {METHODS}")
     cfg = load_config()
+    if a.collection:
+        cfg["retrieve"]["collection"] = a.collection
     fresh = {m: evaluate(m, a.split, cfg) for m in methods}
     # The table covers every method with a results file, so one method can be (re)run on its own.
     results = {m: fresh.get(m) or json.loads(p.read_text(encoding="utf-8")) for m in METHODS

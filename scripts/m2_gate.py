@@ -105,6 +105,7 @@ def sample_markdown(sample: list[dict], cfg: dict) -> str:
 def main() -> None:
     sys.stdout.reconfigure(encoding="utf-8")
     cfg = load_config()
+    cfg["retrieve"]["collection"] = "dev_slice"  # the M2 gate was measured on the dev index (D36)
     out(f"# M2 gate — {SPLIT}")
     out("\n## 0. Metric unit tests: run `uv run pytest` (reported separately)")
     determinism(cfg)
