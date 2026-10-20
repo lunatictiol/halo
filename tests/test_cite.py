@@ -31,24 +31,33 @@ def test_parse_sentence(sentence, expected):
 
 
 def _check(supported: set[tuple[str, int]]):
-    """Stub checker: supported iff (claim prefix, section id) is listed; records calls."""
+    """Stub checker: supported iff (claim prefix, section id) is listed and that section is among the passages;
+    records calls as (claim, section ids)."""
     calls = []
 
-    def check(claim: str, chunk: dict) -> dict:
-        calls.append((claim, chunk["section_id"]))
-        ok = any(claim.startswith(p) and chunk["section_id"] == s for p, s in supported)
+    def check(claim: str, chunks: list[dict]) -> dict:
+        ids = tuple(c["section_id"] for c in chunks)
+        calls.append((claim, ids))
+        ok = any(claim.startswith(p) and s in ids for p, s in supported)
         return {"verdict": "supported" if ok else "unsupported", "reason": "r", "ms": 1}
     return check, calls
 
 
-def test_ground_keeps_supported_strips_bad_citations_and_removes_unsupported():
+def test_ground_keeps_supported_and_removes_unsupported_and_unattributable_uncited():
     check, calls = _check({("A", 1)})
     g = ground("A uses BM25 [P1][P2]. B is fast [P3]. C has no citation.", CHUNKS, check)
-    assert [s["kept"] for s in g["sentences"]] == [True, False, True]
-    assert [s["grounded"] for s in g["sentences"]] == [True, False, None]
-    assert g["final"] == "A uses BM25 [p1 §1 p.10]. C has no citation."
+    assert [s["kept"] for s in g["sentences"]] == [True, False, False]
+    assert g["final"] == "A uses BM25 [p1 §1 p.10] [p2 §2 p.20]."
     assert g["raw"] == "A uses BM25 [p1 §1 p.10] [p2 §2 p.20]. B is fast [p3 §3 p.30]. C has no citation."
-    assert not g["abstained"] and len(calls) == 5   # 3 cited + B re-checked against P1, P2
+    assert not g["abstained"] and len(calls) == 7   # A once (P1+P2), B: P3 then P1, P2; C: P1, P2, P3
+    assert calls[0] == ("A uses BM25.", (1, 2))      # one joint check per sentence, not one per citation
+
+
+def test_ground_attributes_uncited_sentence_to_supporting_passage():
+    check, _ = _check({("A", 1), ("Yes", 2)})
+    g = ground("Yes it is. A is true [P1].", CHUNKS, check)
+    assert g["sentences"][0]["reattributed"]["n"] == 2 and g["sentences"][0]["cites"] == []
+    assert g["final"] == "Yes it is [p2 §2 p.20]. A is true [p1 §1 p.10]."
 
 
 def test_ground_out_of_range_is_invalid_without_a_call():
@@ -73,13 +82,13 @@ def test_citation_scores():
     check, _ = _check({("A", 1)})
     g = ground("A uses BM25 [P1][P2]. B is fast [P3]. C has no citation. D too [P9].", CHUNKS, check)
     s = citation_scores(g)
-    assert s["citation_validity"] == pytest.approx(1 / 4)            # 1 supported of 4 (incl. out of range)
+    assert s["citation_validity"] == pytest.approx(2 / 4)            # A's two (joint verdict) of 4 incl. out of range
     assert s["citation_coverage"] == pytest.approx(3 / 4)            # C is uncited
-    assert s["citation_coverage_final"] == pytest.approx(1 / 2)      # kept: A (grounded), C (uncited)
-    assert s["sentences_removed"] == pytest.approx(2 / 4)            # B and D
+    assert s["citation_coverage_final"] == pytest.approx(1)          # only A is kept
+    assert s["sentences_removed"] == pytest.approx(3 / 4)            # B, C and D
     t = citation_totals([g, None])
     assert t["answers_checked"] == 1 and t["citations"] == 4 and t["out_of_range"] == 1
-    assert t["supported"] == 1 and t["unsupported"] == 2 and t["sentences_removed"] == 2
+    assert t["supported"] == 2 and t["unsupported"] == 1 and t["sentences_removed"] == 3
 
 
 def test_citation_scores_not_applicable():
@@ -96,7 +105,7 @@ def test_ground_reattributes_failed_sentence_to_supporting_passage():
     assert s["kept"] and s["grounded"] and s["reattributed"]["n"] == 3
     assert [c["verdict"] for c in s["cites"]] == ["unsupported"]        # validity still sees the original citation
     assert g["final"] == "A is true [p3 §3 p.30]." and not g["abstained"]
-    assert calls == [("A is true.", 1), ("A is true.", 2), ("A is true.", 3)]
+    assert calls == [("A is true.", (1,)), ("A is true.", (2,)), ("A is true.", (3,))]
     assert citation_scores(g)["citation_validity"] == 0.0
     assert citation_totals([g])["reattributed"] == 1
 

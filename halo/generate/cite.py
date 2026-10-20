@@ -3,13 +3,12 @@
 The generator cites passages by label ("... 4 layers [P2]."). Labels are P-prefixed because chunk text is full of
 the papers' own bibliography markers ("[21]"), which cite-v1's plain numbers collided with (D34). Code, not the
 model, turns [Pn] into (paper, section, page) from the chunk's metadata, so a citation can only point at a passage
-that was retrieved. The grounding check asks the LLM, per (sentence, cited passage) pair, whether the passage
-supports the sentence:
-  - a sentence with >= 1 supported citation is kept, with its unsupported citations stripped;
-  - a cited sentence with no supported citation is checked against the other passages and re-attributed to the
-    first one that supports it (the right text is often in the neighbouring chunk); otherwise it is removed;
-  - an uncited sentence is kept but flagged (it lowers citation coverage);
-  - no grounded sentence left -> abstain.
+that was retrieved. The grounding check (D35) asks the LLM, once per sentence, whether its cited passages together
+support everything the sentence says (per-passage checks let one passage carry a second, unsupported claim):
+  - supported -> kept with its citations;
+  - otherwise, and for uncited sentences, each other passage is tried alone and the sentence is (re-)attributed to
+    the first one that supports it (the right text is often in the neighbouring chunk); otherwise it is removed;
+  - no sentence left -> abstain.
 """
 
 import re
@@ -29,8 +28,8 @@ _BOUNDARY = re.compile(r"(?<=[.!?])\s+(?=[A-Z0-9(\"'])")
 # A period after these does not end a sentence (common in research-paper prose).
 _ABBREV = re.compile(r"(?:\b(?:e\.g|i\.e|et al|cf|vs|Fig|Figs|Eq|Eqs|Sec|Tab|Ref|approx|resp|No)\.|\b[A-Z]\.)$")
 
-# check(sentence, chunk) -> {verdict, reason, ms}
-Check = Callable[[str, dict], dict]
+# check(sentence, chunks) -> {verdict, reason, ms}: do these passages together support the sentence?
+Check = Callable[[str, list[dict]], dict]
 
 
 def format_cite_context(chunks: list[dict]) -> str:
@@ -80,18 +79,20 @@ def _render(text: str, cites: list[dict]) -> str:
 
 
 def ground(answer: str, chunks: list[dict], check: Check) -> dict:
-    """Split, resolve and check every citation of an answer; returns the per-sentence record and final text.
-    `cites` are the generator's own citations (what validity measures); `reattributed` is the passage the check
-    moved a failed sentence to, if any. A citation number outside 1..len(chunks) is invalid without an LLM call.
-    A checker parse failure (verdict None) does not keep a sentence (same rule as the grader) and is excluded
-    from validity."""
+    """Split, resolve and check every sentence of an answer; returns the per-sentence record and final text.
+    `cites` are the generator's own citations, each carrying its sentence's joint verdict (what validity
+    measures); `reattributed` is the passage the check moved a failed or uncited sentence to, if any. A citation
+    number outside 1..len(chunks) is invalid without an LLM call. A checker parse failure (verdict None) does not
+    keep a sentence (same rule as the grader) and is excluded from validity."""
     cache = {}
 
-    def cite(text: str, n: int) -> dict:
+    def verdict(text: str, ns: tuple[int, ...]) -> dict:
+        if (text, ns) not in cache:
+            cache[text, ns] = check(text, [chunks[n - 1] for n in ns])
+        return cache[text, ns]
+
+    def ref(n: int, v: dict) -> dict:
         ch = chunks[n - 1]
-        if (text, n) not in cache:
-            cache[text, n] = check(text, ch)
-        v = cache[text, n]
         return {"n": n, "label": label(ch), "paper_id": ch["paper_id"], "section_id": ch["section_id"],
                 "page": ch["page"], "verdict": v["verdict"], "reason": v["reason"]}
 
@@ -100,28 +101,29 @@ def ground(answer: str, chunks: list[dict], check: Check) -> dict:
         text, ids = parse_sentence(raw)
         if not text:
             continue
-        cites = [cite(text, n) if 1 <= n <= len(chunks) else
-                 {"n": n, "label": "[?]", "verdict": "out_of_range", "reason": None} for n in ids]
+        valid = tuple(n for n in ids if 1 <= n <= len(chunks))
+        v = verdict(text, valid) if valid else None
+        cites = [ref(n, v) if n in valid else {"n": n, "label": "[?]", "verdict": "out_of_range", "reason": None}
+                 for n in ids]
         supported, moved = [c for c in cites if c["verdict"] == "supported"], None
-        if cites and not supported:  # re-attribute to the first other passage that supports the sentence
-            others = (cite(text, n) for n in range(1, len(chunks) + 1) if n not in ids)
+        if not supported:  # failed or uncited: (re-)attribute to the first single other passage that supports it
+            others = (ref(n, verdict(text, (n,))) for n in range(1, len(chunks) + 1) if n not in valid)
             moved = next((c for c in others if c["verdict"] == "supported"), None)
             supported = [moved] if moved else []
-        sentences.append({"text": text, "cites": cites, "reattributed": moved,
-                          "grounded": bool(supported) if cites else None,
-                          "kept": bool(supported) or not cites, "final": _render(text, supported)})
+        sentences.append({"text": text, "cites": cites, "reattributed": moved, "grounded": bool(supported),
+                          "kept": bool(supported), "final": _render(text, supported)})
     kept = [s for s in sentences if s["kept"]]
     return {"sentences": sentences,
             "raw": " ".join(_render(s["text"], s["cites"]) for s in sentences),
             "final": " ".join(s["final"] for s in kept),
-            "abstained": not any(s["grounded"] for s in kept)}
+            "abstained": not kept}
 
 
 def llm_check(question: str, cfg: dict) -> Check:
     c = cfg["cite"]
 
-    def check(sentence: str, chunk: dict) -> dict:
-        prompt = c["check_prompt"].format(question=question, claim=sentence, passage=format_context([chunk]))
+    def check(sentence: str, chunks: list[dict]) -> dict:
+        prompt = c["check_prompt"].format(question=question, claim=sentence, passages=format_context(chunks))
         return classify(c["check_system_prompt"], prompt, CHECK, cfg["models"]["llm"], c["check_max_tokens"],
                         c["check_parse_retries"], cfg)
     return check

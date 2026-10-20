@@ -14,7 +14,7 @@ from eval.report.summary import ABSTENTION_SPLIT, ANSWERABLE_SPLIT
 from eval.results import RESULTS_DIR
 from halo.data import data_dir
 
-BASE, V1 = "m4_graph_v2", "m5_cite"
+BASE, V1, V2 = "m4_graph_v2", "m5_cite", "m5_cite_v2"
 CITE = sys.argv[1] if len(sys.argv) > 1 else V1
 N_REVIEW, N_REMOVED, REVIEW_SEED, EXCERPT = 10, 5, 5, 400
 ROWS = [("correct", "Correct"), ("correct_if_answered", "Correct|ans"), ("faithful", "Faithful (final answer)"),
@@ -89,7 +89,7 @@ def _answer_block(rec: dict, title: str) -> list[str]:
            f"- **Question:** {rec['query']}", f"- **Final answer:** {rec['answer']}",
            f"- **Reference:** {rec['reference']}",
            f"- **Judge:** faithful {_f(rec['faithful'])}, correct {_f(rec['correct'])}", "- **Sentences:**"]
-    for s in rec["grounding"]["sentences"]:
+    for s in (rec["grounding"] or {}).get("sentences", []):  # None: the generator abstained
         out.append(f"  - ({'kept' if s['kept'] else 'REMOVED'}{', uncited' if not s['cites'] else ''}) {s['text']}")
         for c in s["cites"]:
             if c["verdict"] == "out_of_range":
@@ -103,12 +103,27 @@ def _answer_block(rec: dict, title: str) -> list[str]:
     return out + ["- **Your verdict:** citations valid? [ ] yes [ ] no; notes:", ""]
 
 
-def review_sample(recs: list[dict]) -> list[str]:
-    pool = sorted((r for r in recs if r["grounding"] and not r["abstained"]), key=lambda r: r["query_id"])
-    out = []
-    for i, r in enumerate(random.Random(REVIEW_SEED).sample(pool, min(N_REVIEW, len(pool))), 1):
-        out += _answer_block(r, f"Review {i}")
-    return out
+def review_sample(recs: list[dict], seed: int = REVIEW_SEED, exclude: set = frozenset()) -> list[dict]:
+    pool = sorted((r for r in recs if r["grounding"] and not r["abstained"] and r["query_id"] not in exclude),
+                  key=lambda r: r["query_id"])
+    return random.Random(seed).sample(pool, min(N_REVIEW, len(pool)))
+
+
+def _blocks(recs: list[dict], title: str) -> list[str]:
+    return [line for i, r in enumerate(recs, 1) for line in _answer_block(r, f"{title} {i}")]
+
+
+def review_sections(recs: list[dict], prior: dict | None) -> list[str]:
+    """One seeded sample; after cite-v2, also the same 10 questions reviewed for cite-v2 plus 10 new ones."""
+    head = f"## {N_REVIEW} cited answers for manual review (seeded sample of answered `{ANSWERABLE_SPLIT}` questions)"
+    if prior is None:
+        return [head, "", *_blocks(review_sample(recs), "Review")]
+    ids = [r["query_id"] for r in review_sample(prior["per_query"])]
+    by_id = {r["query_id"]: r for r in recs}
+    return [f"## Re-review: the {len(ids)} questions reviewed for `{V2}` (7/10 valid there, D33)", "",
+            *_blocks([by_id[q] for q in ids], "Re-review"),
+            f"## {N_REVIEW} new answers for manual review (seed {REVIEW_SEED + 1}, excluding the re-review)", "",
+            *_blocks(review_sample(recs, REVIEW_SEED + 1, set(ids)), "New review")]
 
 
 def removed_examples(recs: list[dict]) -> tuple[int, list[str]]:
@@ -121,7 +136,7 @@ def removed_examples(recs: list[dict]) -> tuple[int, list[str]]:
 
 
 def build() -> str:
-    names = [BASE] + ([V1] if CITE != V1 else []) + [CITE]
+    names = list(dict.fromkeys([BASE, V1] + ([V2] if CITE != V1 else []) + [CITE]))
     runs = {n: (_load(n, ANSWERABLE_SPLIT), _load(n, ABSTENTION_SPLIT)) for n in names}
     (base, _), (cite, cite_ab) = runs[BASE], runs[CITE]
     recs = with_hits(cite)
@@ -140,8 +155,7 @@ def build() -> str:
         f"## Paired per-query changes (`{ANSWERABLE_SPLIT}`, correctness)", "", *paired(base, cite), "",
         f"## Answers where the check removed a sentence ({n_removed} on `{ANSWERABLE_SPLIT}`; "
         f"{min(N_REMOVED, n_removed)} shown)", "", *removed_lines,
-        f"## {N_REVIEW} cited answers for manual review (seeded sample of answered `{ANSWERABLE_SPLIT}` questions)", "",
-        *review_sample(recs),
+        *review_sections(recs, None if CITE in (V1, V2) else runs[V2][0]),
     ])
 
 

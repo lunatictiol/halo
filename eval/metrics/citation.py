@@ -1,12 +1,13 @@
 """Per-query citation metrics from a grounding record (halo.generate.cite.ground). None = not applicable
 (no answer was generated, or nothing to measure) and is excluded from means (D17).
 
-- citation_validity: share of the raw answer's citations whose passage supports the sentence. Out-of-range
+- citation_validity: share of the raw answer's citations whose sentence is supported by its cited passages
+  (check-v2 judges a sentence's passages jointly, D35; check-v1 judged each passage alone). Out-of-range
   numbers count as invalid; checker parse failures are excluded. These are the pipeline checker's own
   verdicts ("self-checked", D33), not an independent judge.
 - citation_coverage: share of raw-answer sentences with at least one citation.
 - citation_coverage_final: share of sentences kept after the check that carry a supported citation
-  (None if the check abstained).
+  (None if the check abstained; 1.0 by construction with check-v2, which removes unsupported uncited sentences).
 - sentences_removed: share of raw-answer sentences the check removed.
 """
 
