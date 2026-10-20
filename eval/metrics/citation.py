@@ -40,4 +40,5 @@ def citation_totals(groundings: list[dict | None]) -> dict:
             "unsupported": sum(c["verdict"] == "unsupported" for c in cites),
             "out_of_range": sum(c["verdict"] == "out_of_range" for c in cites),
             "check_errors": sum(c["verdict"] is None for c in cites),
+            "reattributed": sum(bool(s.get("reattributed")) for s in sents),
             "grounding_abstentions": sum(bool(g and g["abstained"]) for g in groundings)}

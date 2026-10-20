@@ -1,7 +1,8 @@
 """M5 report: citations + grounding check vs M4 v2 (same retrieval and grades, replayed; D33), citation stats,
 removed-sentence examples and 10 cited answers for manual review.
 
-    uv run python -m eval.report.m5_report      # -> results/m5_report.md
+    uv run python -m eval.report.m5_report               # cite-v1 run -> results/m5_report.md
+    uv run python -m eval.report.m5_report m5_cite_v2    # -> results/m5_cite_v2_report.md (v1 shown alongside)
 """
 
 import json
@@ -13,7 +14,8 @@ from eval.report.summary import ABSTENTION_SPLIT, ANSWERABLE_SPLIT
 from eval.results import RESULTS_DIR
 from halo.data import data_dir
 
-BASE, CITE = "m4_graph_v2", "m5_cite"
+BASE, V1 = "m4_graph_v2", "m5_cite"
+CITE = sys.argv[1] if len(sys.argv) > 1 else V1
 N_REVIEW, N_REMOVED, REVIEW_SEED, EXCERPT = 10, 5, 5, 400
 ROWS = [("correct", "Correct"), ("correct_if_answered", "Correct|ans"), ("faithful", "Faithful (final answer)"),
         ("faithful_raw", "Faithful (pre-check answer)"), ("abstained", "False-abstention")]
@@ -27,17 +29,19 @@ def _cell(res: dict, metric: str) -> str:
     return _f(_mean(res, metric)) if metric in res["metrics"]["overall"] else "–"
 
 
-def comparison(base: dict, cite: dict, base_ab: dict, cite_ab: dict) -> list[str]:
-    lines = [f"| Metric | M4 `{BASE}` | M5 `{CITE}` |", "|---|---|---|"]
-    lines += [f"| {label} | {_cell(base, m)} | {_cell(cite, m)} |" for m, label in ROWS + CITE_ROWS]
-    lines += [f"| **Abstention rate on `{ABSTENTION_SPLIT}`** | {_cell(base_ab, 'abstained')} | "
-              f"**{_cell(cite_ab, 'abstained')}** |",
-              f"| Faithful, answered `{ABSTENTION_SPLIT}` questions | {_cell(base_ab, 'faithful')} | "
-              f"{_cell(cite_ab, 'faithful')} |",
-              f"| Median end-to-end ms (`{ANSWERABLE_SPLIT}`; M5 stitched) | {base['graph']['graph_ms_median']:.0f} | "
-              f"{cite['graph']['graph_ms_median']:.0f} |",
-              f"| Median generate ms (`{ANSWERABLE_SPLIT}`) | {base['latency_ms_median']['generate']:.0f} | "
-              f"{cite['latency_ms_median']['generate']:.0f} |"]
+def comparison(runs: dict[str, tuple[dict, dict]]) -> list[str]:
+    """runs: name -> (answerable results, abstention results), in column order."""
+    ans, ab = [r[0] for r in runs.values()], [r[1] for r in runs.values()]
+
+    def row(label: str, cells: list[str]) -> str:
+        return f"| {label} | " + " | ".join(cells) + " |"
+    lines = [row("Metric", [f"`{n}`" for n in runs]), "|---" * (len(runs) + 1) + "|"]
+    lines += [row(label, [_cell(r, m) for r in ans]) for m, label in ROWS + CITE_ROWS]
+    lines += [row(f"**Abstention rate on `{ABSTENTION_SPLIT}`**", [f"**{_cell(r, 'abstained')}**" for r in ab]),
+              row(f"Faithful, answered `{ABSTENTION_SPLIT}` questions", [_cell(r, "faithful") for r in ab]),
+              row(f"Median end-to-end ms (`{ANSWERABLE_SPLIT}`; M5 stitched)",
+                  [f"{r['graph']['graph_ms_median']:.0f}" for r in ans]),
+              row(f"Median generate ms (`{ANSWERABLE_SPLIT}`)", [f"{r['latency_ms_median']['generate']:.0f}" for r in ans])]
     return lines
 
 
@@ -56,7 +60,7 @@ def totals(name: str, res: dict) -> str:
     return (f"- `{name}`: {t['answers_checked']} answers checked, {t['sentences']} sentences "
             f"({t['sentences_cited']} cited, {t['sentences_removed']} removed), {t['citations']} citations: "
             f"{t['supported']} supported, {t['unsupported']} unsupported, {t['out_of_range']} out of range, "
-            f"{t['check_errors']} checker errors. Abstained by grader {a['grader']}, generator {a['generator']}, "
+            f"{t['check_errors']} checker errors; {t.get('reattributed', 0)} sentences re-attributed. Abstained by grader {a['grader']}, generator {a['generator']}, "
             f"**grounding check {a['grounding']}**.")
 
 
@@ -93,6 +97,9 @@ def _answer_block(rec: dict, title: str) -> list[str]:
                 continue
             out += [f"    - `[{c['n']}]` {c['label']} → **{c['verdict']}**: {c['reason']}",
                     f"      > {_excerpt(rec, c['n'])}"]
+        if m := s.get("reattributed"):
+            out += [f"    - re-attributed to `[{m['n']}]` {m['label']} → **supported**: {m['reason']}",
+                    f"      > {_excerpt(rec, m['n'])}"]
     return out + ["- **Your verdict:** citations valid? [ ] yes [ ] no; notes:", ""]
 
 
@@ -114,8 +121,9 @@ def removed_examples(recs: list[dict]) -> tuple[int, list[str]]:
 
 
 def build() -> str:
-    base, cite = _load(BASE, ANSWERABLE_SPLIT), _load(CITE, ANSWERABLE_SPLIT)
-    base_ab, cite_ab = _load(BASE, ABSTENTION_SPLIT), _load(CITE, ABSTENTION_SPLIT)
+    names = [BASE] + ([V1] if CITE != V1 else []) + [CITE]
+    runs = {n: (_load(n, ANSWERABLE_SPLIT), _load(n, ABSTENTION_SPLIT)) for n in names}
+    (base, _), (cite, cite_ab) = runs[BASE], runs[CITE]
     recs = with_hits(cite)
     n_removed, removed_lines = removed_examples(recs)
     src, c = cite["replayed_from"], cite["config"]["cite"]
@@ -126,7 +134,7 @@ def build() -> str:
         f"the grounding check (`{c['check_prompt_version']}`) rerun (D33). Generator, checker and judge "
         f"`{cite['generator_model']}`; M5 commit `{cite['git']['commit']}`{' (dirty)' if cite['git']['dirty'] else ''}. "
         "Citation validity is the checker's own verdicts on the pre-check answer, not an independent judge.", "",
-        *comparison(base, cite, base_ab, cite_ab), "",
+        *comparison(runs), "",
         "## Citation totals", "", totals(ANSWERABLE_SPLIT, cite), totals(ABSTENTION_SPLIT, cite_ab), "",
         f"## By slice (`{ANSWERABLE_SPLIT}`)", "", *slice_table(cite), "",
         f"## Paired per-query changes (`{ANSWERABLE_SPLIT}`, correctness)", "", *paired(base, cite), "",
@@ -140,7 +148,7 @@ def build() -> str:
 def main() -> None:
     sys.stdout.reconfigure(encoding="utf-8")
     text = build()
-    (RESULTS_DIR / "m5_report.md").write_text(text, encoding="utf-8")
+    (RESULTS_DIR / ("m5_report.md" if CITE == V1 else f"{CITE}_report.md")).write_text(text, encoding="utf-8")
     print(text)
 
 

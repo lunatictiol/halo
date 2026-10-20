@@ -2,7 +2,7 @@
 
 Sources: `results/m4_graph_v2_*.json`, `results/m5_cite_*.json`. M5 replays `m4_graph_v2_dev_sample` (commit `1ac9b45`): same hits and grader decisions; only generation (`cite-v1`) and the grounding check (`check-v1`) rerun (D33). Generator, checker and judge `qwen3:8b`; M5 commit `f351612` (dirty). Citation validity is the checker's own verdicts on the pre-check answer, not an independent judge.
 
-| Metric | M4 `m4_graph_v2` | M5 `m5_cite` |
+| Metric | `m4_graph_v2` | `m5_cite` |
 |---|---|---|
 | Correct | 0.908 | 0.884 |
 | Correct|ans | 0.939 | 0.927 |
@@ -13,15 +13,15 @@ Sources: `results/m4_graph_v2_*.json`, `results/m5_cite_*.json`. M5 replays `m4_
 | Citation coverage (pre-check answer) | – | 0.941 |
 | Citation coverage (final answer) | – | 0.940 |
 | Share of sentences removed | – | 0.027 |
-| **Abstention rate on `abstention_set`** | 0.882 | **0.888** |
+| **Abstention rate on `abstention_set`** | **0.882** | **0.888** |
 | Faithful, answered `abstention_set` questions | 0.882 | 0.824 |
 | Median end-to-end ms (`dev_sample`; M5 stitched) | 16214 | 25720 |
 | Median generate ms (`dev_sample`) | 6796 | 8164 |
 
 ## Citation totals
 
-- `dev_sample`: 294 answers checked, 532 sentences (490 cited, 13 removed), 533 citations: 508 supported, 12 unsupported, 13 out of range, 0 checker errors. Abstained by grader 9, generator 0, **grounding check 5**.
-- `abstention_set`: 20 answers checked, 33 sentences (32 cited, 8 removed), 37 citations: 26 supported, 10 unsupported, 1 out of range, 0 checker errors. Abstained by grader 124, generator 8, **grounding check 3**.
+- `dev_sample`: 294 answers checked, 532 sentences (490 cited, 13 removed), 533 citations: 508 supported, 12 unsupported, 13 out of range, 0 checker errors; 0 sentences re-attributed. Abstained by grader 9, generator 0, **grounding check 5**.
+- `abstention_set`: 20 answers checked, 33 sentences (32 cited, 8 removed), 37 citations: 26 supported, 10 unsupported, 1 out of range, 0 checker errors; 0 sentences re-attributed. Abstained by grader 124, generator 8, **grounding check 3**.
 
 ## By slice (`dev_sample`)
 
