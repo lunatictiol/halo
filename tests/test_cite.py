@@ -1,0 +1,86 @@
+import pytest
+
+from eval.metrics.citation import citation_scores, citation_totals
+from halo.generate.cite import ground, parse_sentence, split_sentences
+
+CHUNKS = [{"paper_id": f"p{i}", "section_id": i, "page": i * 10, "text": f"passage {i}"} for i in (1, 2, 3)]
+
+
+@pytest.mark.parametrize("text,expected", [
+    ("A uses BM25 [1]. B is 0.5 [2].", ["A uses BM25 [1].", "B is 0.5 [2]."]),
+    ("A uses BM25. [1] B is fast. [2][3]", ["A uses BM25 [1].", "B is fast [2][3]."]),   # marker after the period
+    ("As shown by Smith et al. [1], it works.", ["As shown by Smith et al. [1], it works."]),
+    ("It uses e.g. Adam [1]. Fig. 3 shows it [2].", ["It uses e.g. Adam [1].", "Fig. 3 shows it [2]."]),
+    ("Accuracy rose from 0.81 to 0.93 [1].", ["Accuracy rose from 0.81 to 0.93 [1]."]),
+    ("", []),
+])
+def test_split_sentences(text, expected):
+    assert split_sentences(text) == expected
+
+
+@pytest.mark.parametrize("sentence,expected", [
+    ("A uses BM25 [1].", ("A uses BM25.", [1])),
+    ("A [2] and B [1, 2][3].", ("A and B.", [2, 1, 3])),
+    ("No citation here.", ("No citation here.", [])),
+])
+def test_parse_sentence(sentence, expected):
+    assert parse_sentence(sentence) == expected
+
+
+def _check(supported: set[tuple[str, int]]):
+    """Stub checker: supported iff (claim prefix, section id) is listed; records calls."""
+    calls = []
+
+    def check(claim: str, chunk: dict) -> dict:
+        calls.append((claim, chunk["section_id"]))
+        ok = any(claim.startswith(p) and chunk["section_id"] == s for p, s in supported)
+        return {"verdict": "supported" if ok else "unsupported", "reason": "r", "ms": 1}
+    return check, calls
+
+
+def test_ground_keeps_supported_strips_bad_citations_and_removes_unsupported():
+    check, calls = _check({("A", 1)})
+    g = ground("A uses BM25 [1][2]. B is fast [3]. C has no citation.", CHUNKS, check)
+    assert [s["kept"] for s in g["sentences"]] == [True, False, True]
+    assert [s["grounded"] for s in g["sentences"]] == [True, False, None]
+    assert g["final"] == "A uses BM25 [p1 §1 p.10]. C has no citation."
+    assert g["raw"] == "A uses BM25 [p1 §1 p.10] [p2 §2 p.20]. B is fast [p3 §3 p.30]. C has no citation."
+    assert not g["abstained"] and len(calls) == 3
+
+
+def test_ground_out_of_range_is_invalid_without_a_call():
+    check, calls = _check({("A", 1)})
+    g = ground("A is true [1][7].", CHUNKS, check)
+    assert [c["verdict"] for c in g["sentences"][0]["cites"]] == ["supported", "out_of_range"]
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("answer", ["A is wrong [2].", "Nothing is cited.", ""])
+def test_ground_abstains_without_a_grounded_sentence(answer):
+    check, _ = _check({("A", 1)})
+    assert ground(answer, CHUNKS, check)["abstained"]
+
+
+def test_ground_parse_error_does_not_keep_sentence():
+    g = ground("A is true [1].", CHUNKS, lambda c, ch: {"verdict": None, "reason": "parse_error", "ms": None})
+    assert g["sentences"][0]["kept"] is False and g["abstained"]
+
+
+def test_citation_scores():
+    check, _ = _check({("A", 1)})
+    g = ground("A uses BM25 [1][2]. B is fast [3]. C has no citation. D too [9].", CHUNKS, check)
+    s = citation_scores(g)
+    assert s["citation_validity"] == pytest.approx(1 / 4)            # 1 supported of 4 (incl. out of range)
+    assert s["citation_coverage"] == pytest.approx(3 / 4)            # C is uncited
+    assert s["citation_coverage_final"] == pytest.approx(1 / 2)      # kept: A (grounded), C (uncited)
+    assert s["sentences_removed"] == pytest.approx(2 / 4)            # B and D
+    t = citation_totals([g, None])
+    assert t["answers_checked"] == 1 and t["citations"] == 4 and t["out_of_range"] == 1
+    assert t["supported"] == 1 and t["unsupported"] == 2 and t["sentences_removed"] == 2
+
+
+def test_citation_scores_not_applicable():
+    assert set(citation_scores(None).values()) == {None}
+    abstained = ground("B is fast [3].", CHUNKS, _check(set())[0])
+    s = citation_scores(abstained)
+    assert s["citation_validity"] == 0.0 and s["citation_coverage_final"] is None

@@ -1,11 +1,13 @@
 """Run a pipeline on a split and score it: retrieve -> generate -> judge -> score.
 
     uv run python -m eval.runners.run --split dev_sample                     # method from config
-    uv run python -m eval.runners.run --split dev_sample --pipeline graph     # M4 corrective loop
+    uv run python -m eval.runners.run --split dev_sample --pipeline graph     # M4 loop + M5 grounding check
+    uv run python -m eval.runners.run --split dev_sample --pipeline graph --replay-from m4_graph_v2   # M5 eval
     uv run python -m eval.runners.run --split abstention_set --method dense --name m2_baseline
     uv run python -m eval.runners.run --split dev_sample --limit 5           # smoke test, separate run dir
 
-With --pipeline graph, one `graph` stage (halo/graph/pipeline.py) replaces retrieve + generate.
+With --pipeline graph, one `graph` stage (halo/graph/pipeline.py) replaces retrieve + generate. With
+--replay-from, the graph stage reuses that run's retrieval and grading and reruns only generate + verify (D33).
 Each stage checkpoints per query under data/runs/<run>/ so an interrupted run resumes, and judging can be
 redone without regenerating. Checkpoints are tied to a config fingerprint; a changed config needs --fresh.
 """
@@ -20,7 +22,8 @@ from pathlib import Path
 
 from eval.judge import judge_correctness, judge_faithfulness
 from eval.metrics.abstention import is_abstention
-from eval.metrics.answer import answer_scores
+from eval.metrics.answer import _score, answer_scores
+from eval.metrics.citation import citation_scores, citation_totals
 from eval.metrics.retrieval import query_metrics
 from eval.metrics.slices import summarize
 from eval.results import RESULTS_DIR, write_results
@@ -98,6 +101,18 @@ def generate_all(queries: list[dict], retrieved: dict, path: Path, cfg: dict) ->
             print(f"  generated {n}/{len(todo)}", flush=True)
 
 
+def _graph_out(qid: str, out: dict, graph_ms: int) -> dict:
+    from halo.graph.pipeline import abstained_by
+    gen = out.get("generation") or {}
+    return {"query_id": qid, "answer": out["answer"], "abstained": out["abstained"],
+            "abstain_reason": out["abstain_reason"], "abstained_by": abstained_by(out),
+            "retries": out["attempts"] - 1, "graph_ms": graph_ms,
+            "hits": [{k: h[k] for k in HIT_KEYS} for h in out["hits"]],
+            "generate_ms": gen.get("ms"), "prompt_tokens": gen.get("prompt_tokens"),
+            "output_tokens": gen.get("output_tokens"), "raw_answer": out.get("raw_answer"),
+            "grounding": out.get("grounding"), "trace": out["trace"]}
+
+
 def graph_all(queries: list[dict], path: Path, cfg: dict) -> None:
     """Run the corrective loop per query; the record keeps the full node trace (queries, grades, reasons)."""
     from halo.graph.pipeline import build_graph, default_nodes
@@ -110,19 +125,38 @@ def graph_all(queries: list[dict], path: Path, cfg: dict) -> None:
         for n, q in enumerate(todo, 1):
             start = time.perf_counter()
             out = graph.invoke({"question": q["query"]})
-            gen = out.get("generation") or {}
-            _append_jsonl(path, {
-                "query_id": q["query_id"], "answer": out["answer"], "abstained": out["abstained"],
-                "abstain_reason": out["abstain_reason"],
-                "abstained_by": ("generator" if gen else "grader") if out["abstained"] else None,
-                "retries": out["attempts"] - 1, "graph_ms": round((time.perf_counter() - start) * 1000),
-                "hits": [{k: h[k] for k in HIT_KEYS} for h in out["hits"]],
-                "generate_ms": gen.get("ms"), "prompt_tokens": gen.get("prompt_tokens"),
-                "output_tokens": gen.get("output_tokens"), "trace": out["trace"]})
+            _append_jsonl(path, _graph_out(q["query_id"], out, round((time.perf_counter() - start) * 1000)))
             if n % 10 == 0 or n == len(todo):
                 print(f"  graph {n}/{len(todo)}", flush=True)
     finally:
         retriever.close()
+
+
+def replay_all(queries: list[dict], source_path: Path, path: Path, cfg: dict) -> None:
+    """Replay a graph run (D33): keep its retrieval, reranking, grading and rewrites, rerun generate + verify on
+    the hits the grader approved. Grader abstentions are copied. The trace swaps in the new generate/verify
+    entries, so graph_ms = the source's time without its generation + the new generate + verify time."""
+    from halo.graph.pipeline import default_nodes, traced
+    source = _read_jsonl(source_path)
+    if missing := [q["query_id"] for q in queries if q["query_id"] not in source]:
+        raise SystemExit(f"{source_path}: {len(missing)} queries missing, e.g. {missing[0]}")
+    nodes = default_nodes(None, cfg)  # generate/verify never touch the retriever
+    generate, verify = traced("generate", nodes["generate"]), traced("verify", nodes["verify"])
+    todo = _pending(queries, _read_jsonl(path), "graph (replay)")
+    for n, q in enumerate(todo, 1):
+        src = source[q["query_id"]]
+        trace = [t for t in src["trace"] if t["node"] != "generate"]
+        state = {"question": q["query"], "hits": src["hits"], "attempts": src["retries"] + 1, "abstained": True,
+                 "answer": src["answer"], "abstain_reason": src["abstain_reason"], "generation": None}
+        if src["abstained_by"] != "grader":
+            state |= (g := generate(state))
+            state |= (v := verify(state))
+            trace += g["trace"] + v["trace"]
+        old_gen = sum(t["ms"] for t in src["trace"] if t["node"] == "generate")
+        new = sum(t["ms"] for t in trace if t["node"] in ("generate", "verify"))
+        _append_jsonl(path, _graph_out(q["query_id"], state | {"trace": trace}, src["graph_ms"] - old_gen + new))
+        if n % 10 == 0 or n == len(todo):
+            print(f"  replayed {n}/{len(todo)}", flush=True)
 
 
 def graph_views(graphed: dict[str, dict]) -> dict[str, dict]:
@@ -145,6 +179,20 @@ def graph_record(rec: dict, g: dict, cfg: dict, answerable: bool) -> dict:
     return rec | out
 
 
+def citation_record(rec: dict, g: dict, jud: dict) -> dict:
+    """M5 fields. faithful_raw is the pre-check answer's faithfulness; it equals faithful when the check
+    changed nothing (the same text was judged)."""
+    gr = g.get("grounding")
+    raw = None if not gr else (_score(_verdict(jud, "faithfulness_raw")) if "faithfulness_raw" in jud
+                               else rec["faithful"])
+    return rec | citation_scores(gr) | {"raw_answer": g.get("raw_answer"), "grounding": gr,
+                                        "faithfulness_raw": jud.get("faithfulness_raw"), "faithful_raw": raw}
+
+
+CITATION_METRICS = ["faithful_raw", "citation_validity", "citation_coverage", "citation_coverage_final",
+                    "sentences_removed"]
+
+
 def graph_summary(recs: list[dict], cfg: dict) -> dict:
     """Gate check: no query may exceed max_retries (counted from the trace, independently of the router)."""
     max_retries = cfg["graph"]["max_retries"]
@@ -152,7 +200,7 @@ def graph_summary(recs: list[dict], cfg: dict) -> dict:
     return {"max_retries": max_retries, "retries_mean": round(statistics.mean(r["retries"] for r in recs), 4),
             "retries_histogram": {str(n): sum(r["retries"] == n for r in recs) for n in range(max_retries + 1)},
             "queries_over_retry_limit": sum(n > max_retries + 1 for n in retrievals),
-            "abstained_by": {k: sum(r["abstained_by"] == k for r in recs) for k in ("grader", "generator")},
+            "abstained_by": {k: sum(r["abstained_by"] == k for r in recs) for k in ("grader", "generator", "grounding")},
             "graph_ms_median": statistics.median(r["graph_ms"] for r in recs)}
 
 
@@ -162,11 +210,14 @@ def judge_all(queries: list[dict], retrieved: dict, generated: dict, path: Path,
     todo = _pending(queries, _read_jsonl(path), "judge")
     for n, q in enumerate(todo, 1):
         gen, rec = generated[q["query_id"]], {"query_id": q["query_id"]}
+        chunks = retrieved[q["query_id"]]["hits"][:k]
         if not gen["abstained"]:
-            chunks = retrieved[q["query_id"]]["hits"][:k]
             rec["faithfulness"] = judge_faithfulness(q["query"], gen["answer"], chunks, cfg)
             if answerable:
                 rec["correctness"] = judge_correctness(q["query"], gen["answer"], q["reference"], cfg)
+        # M5: also judge the pre-check answer when the grounding check changed it, to isolate the check's effect.
+        if (gr := gen.get("grounding")) and gr["raw"] != gen["answer"]:
+            rec["faithfulness_raw"] = judge_faithfulness(q["query"], gr["raw"], chunks, cfg)
         _append_jsonl(path, rec)
         if n % 10 == 0 or n == len(todo):
             print(f"  judged {n}/{len(todo)}", flush=True)
@@ -211,12 +262,17 @@ def score(split: str, queries: list[dict], retrieved: dict, generated: dict, jud
     recs = [per_query_record(q, retrieved[q["query_id"]], generated[q["query_id"]], judged[q["query_id"]], cfg, answerable)
             for q in queries]
     names = metric_names(cfg, answerable)
+    cited = graphed is not None and any("grounding" in g for g in graphed.values())
     if graphed is not None:
         recs = [graph_record(rec, graphed[rec["query_id"]], cfg, answerable) for rec in recs]
         names += ["retries"]
         if answerable:
             names += [f"first_recall@{k}" for k in cfg["retrieve"]["recall_ks"]] + ["first_mrr"]
-    verdicts = [v for r in recs for v in (r["faithfulness"], r["correctness"]) if v is not None]
+    if cited:
+        recs = [citation_record(rec, graphed[rec["query_id"]], judged[rec["query_id"]]) for rec in recs]
+        names += CITATION_METRICS
+    verdicts = [v for r in recs for v in (r["faithfulness"], r["correctness"], r.get("faithfulness_raw"))
+                if v is not None]
     payload = {
         "split": split, "kind": "answerable" if answerable else "abstention", "n_queries": len(recs),
         "metrics": summarize(recs, names),
@@ -231,6 +287,8 @@ def score(split: str, queries: list[dict], retrieved: dict, generated: dict, jud
             {k: r[k] for k in ("query_id", "query", "answer", "retrieved")} for r in recs if r["faithful"] == 1.0]
     if graphed is not None:
         payload["graph"] = graph_summary(recs, cfg)
+    if cited:
+        payload["citations"] = citation_totals([r["grounding"] for r in recs])
     return payload | {"per_query": recs}
 
 
@@ -251,14 +309,16 @@ def prepare_run_dir(run_name: str, cfg: dict, fresh: bool) -> Path:
 
 
 def run(split: str, run_name: str, stages: list[str], limit: int | None, fresh: bool, cfg: dict,
-        pipeline: str = "single") -> None:
+        pipeline: str = "single", replay_from: str | None = None) -> None:
     queries = load_queries(split, cfg)[:limit]
     run_dir = prepare_run_dir(run_name, cfg, fresh)
     ret_path, gen_path, jud_path = run_dir / "retrieve.json", run_dir / "generate.jsonl", run_dir / "judge.jsonl"
     graphed = None
     if pipeline == "graph":
         graph_path = run_dir / "graph.jsonl"
-        if "graph" in stages:
+        if "graph" in stages and replay_from:
+            replay_all(queries, data_dir(cfg) / "runs" / f"{replay_from}_{split}" / "graph.jsonl", graph_path, cfg)
+        elif "graph" in stages:
             graph_all(queries, graph_path, cfg)
         graphed = _read_jsonl(graph_path)
         retrieved, generated = graph_views(graphed), graphed
@@ -274,6 +334,9 @@ def run(split: str, run_name: str, stages: list[str], limit: int | None, fresh: 
         judge_all(queries, retrieved, generated, jud_path, cfg, split not in ABSTENTION_SPLITS)
     if "score" in stages:
         payload = score(split, queries, retrieved, generated, _read_jsonl(jud_path), cfg, graphed)
+        if replay_from:
+            src = json.loads((RESULTS_DIR / f"{replay_from}_{split}.json").read_text(encoding="utf-8"))
+            payload = {"replayed_from": {"run": src["run"], "git": src["git"]}} | payload
         # Partial (--limit) runs stay out of the committed results/ directory.
         out_dir = run_dir if limit else RESULTS_DIR
         print(f"score: wrote {write_results(run_name, payload, cfg, out_dir)}")
@@ -286,6 +349,7 @@ def main() -> None:
     p.add_argument("--method", choices=METHODS, help="override [retrieve] method from the config")
     p.add_argument("--pipeline", choices=("single", "graph"), default="single",
                    help="single: one retrieval + one answer (M2/M3); graph: M4 corrective loop")
+    p.add_argument("--replay-from", help="graph only: reuse this graph run's retrieval and grades, e.g. m4_graph_v2")
     p.add_argument("--stages", help=f"default: {','.join(STAGES)} (single) or {','.join(GRAPH_STAGES)} (graph)")
     p.add_argument("--limit", type=int, help="first N queries only (smoke test; separate run directory)")
     p.add_argument("--fresh", action="store_true", help="discard this run's checkpoints first")
@@ -297,9 +361,12 @@ def main() -> None:
     cfg = load_config()
     if a.method:
         cfg["retrieve"]["method"] = a.method  # lands in the config snapshot of the results file
-    default_name = "m4_graph" if a.pipeline == "graph" else "m3_" + cfg["retrieve"]["method"]
+    if a.replay_from and a.pipeline != "graph":
+        p.error("--replay-from needs --pipeline graph")
+    loop_name = "m5_cite" if a.replay_from else "m4_graph"
+    default_name = loop_name if a.pipeline == "graph" else "m3_" + cfg["retrieve"]["method"]
     run_name = f"{a.name or default_name}_{a.split}" + (f"_limit{a.limit}" if a.limit else "")
-    run(a.split, run_name, stages, a.limit, a.fresh, cfg, a.pipeline)
+    run(a.split, run_name, stages, a.limit, a.fresh, cfg, a.pipeline, a.replay_from)
 
 
 if __name__ == "__main__":
