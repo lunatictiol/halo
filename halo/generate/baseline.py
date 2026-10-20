@@ -16,3 +16,8 @@ def answer(question: str, chunks: list[dict], cfg: dict) -> dict:
     user = g["user_prompt"].format(context=format_context(chunks), question=question)
     system = g["system_prompt"].format(sentinel=g["sentinel"])
     return chat(system, user, cfg["models"]["llm"], g["max_tokens"], cfg)
+
+
+def is_abstention(answer: str, sentinel: str) -> bool:
+    """Any occurrence of the sentinel counts, even after a partial answer (the model itself said it can't answer)."""
+    return sentinel.lower() in answer.lower()

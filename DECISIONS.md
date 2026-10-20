@@ -176,3 +176,51 @@ All numbers below: `dev_sample` (n=303), from `results/m3_ablation.md` and the `
 - **Chosen:** `ollama_url = "http://127.0.0.1:11434"`.
 - **Why:** on Windows, `localhost` resolves to IPv6 `::1` first; Ollama listens on IPv4 only, so every request waited about 2 s before falling back. Measured with the same embed call: 2,128–2,162 ms via `localhost`, 57–98 ms via `127.0.0.1`.
 - **Evidence:** the M2 baseline's median retrieve latency (2,184 ms, `results/m2_baseline_dev_sample.json`) was almost entirely this delay. Dense retrieval is now 53 ms median. It also added about 2 s to every M2 generation and judge call. Quality metrics are unaffected (the dense ablation row reproduces M2's retrieval metrics exactly).
+
+### D26. Corrective loop: LangGraph state graph, max_retries = 2, rewritten query for retrieval only
+- **Chosen:** `retrieve (hybrid RRF) → rerank → grade → generate | rewrite → retrieve | abstain`, compiled as a LangGraph `StateGraph` (`halo/graph/pipeline.py`, diagram `docs/m4_graph.md`). At most 2 retries, so at most 3 retrieval attempts per question. The retry limit lives in one pure routing function (`route_after_grade`), and the runner recounts retrievals from each query's trace as an independent check (`queries_over_retry_limit` in every M4 results file). The grader and generator always see the user's original question; only retrieval and reranking use the rewritten query. After a retry, the generator gets the hits of the attempt the grader approved, not a merge of all attempts.
+- **Alternatives:** a plain Python while-loop (same behaviour, but no explicit graph to draw or extend); 1 or 3 retries; reranking rewritten-query candidates against the original question; merging hits across attempts.
+- **Why:** the graph makes the control flow a reviewable artifact and puts the stopping rule in one tested function. 2 retries bounds worst-case cost at about 3× a single attempt, which matters at ~15 s per attempt on this GPU. A third rewrite of the same question has little new to try. Reranking against the rewritten query lets a rewrite that names the missing term actually change the ranking; reranking against the original would largely undo it. Merging attempts would show the generator passages the grader never approved.
+
+### D27. Evidence grader: qwen3:8b, schema-constrained `{reason, verdict}`, strict "different paper" rule
+- **Chosen:** one LLM call on the top `k_context` (5) reranked passages, using the judge's JSON-schema pattern (reason before verdict, D18) with labels `sufficient | insufficient`. The prompt (`grade-v1`, versioned in config) says passages that are only on a related topic, or that describe a different method, model, dataset or paper, are insufficient, and that the reason must name what is missing, because that reason is the rewriter's input. A grader parse failure counts as insufficient. The schema/parse/retry code is shared with the judge (`halo.llm.classify`).
+- **Alternatives:** a reranker-score threshold (no LLM call, but cross-encoder scores are not calibrated across questions and need a tuned cut-off); letting the generator's sentinel be the only abstention signal (the M3 behaviour); a graded score instead of a binary label.
+- **Why:** M3's abstention regression (0.875 → 0.809, D24) comes from the generator answering from close-but-wrong passages of another indexed paper. That is precisely "related topic, different paper", so the grader is told to look for it explicitly. A binary label keeps routing deterministic and matches the judge design. The generator keeps its sentinel as a second line of defence.
+
+### D28. Query rewriter: one line, informed by the grader's reason and all previous queries
+- **Chosen:** prompt `rewrite-v1`: original question, every query already tried, and the grader's reason. It asks for one new query that uses the technical terms and quantities the answer would contain, and does not repeat a tried query. The first non-empty line is used; an empty rewrite falls back to the question.
+- **Alternatives:** HyDE (generate a hypothetical answer passage and retrieve with it); multi-query expansion fused with RRF; rewriting without the grader's reason.
+- **Why:** passing the grader's reason makes the rewrite targeted ("the passages do not give the learning rate" becomes a query about the learning rate) rather than a paraphrase. One query per attempt keeps the cost at one extra short LLM call. HyDE and multi-query are stronger but cost more LLM time per attempt on a 6 GB GPU; they are the next thing to try if rescues are rare.
+
+### D29. GPU sharing: reranker on CUDA, qwen3:8b capped at 22 of 36 layers on the GPU (`num_gpu = 22`)
+- **Problem:** M3 released the reranker before a separate generation stage. In the loop, embedding, reranking and LLM calls alternate for every query on one 6 GB RTX 4050. Ollama picks its GPU layer count (~23 for qwen3:8b) without knowing about the reranker's ~1.1 GB, so the two overcommit VRAM and Windows pages both into shared system memory.
+- **Measured** (`scripts/bench_rerank_device.py` → `results/m4_rerank_device_bench.json`; 10 dev_sample queries after 2 warm-ups, each scenario in a fresh process with Ollama unloaded first; per attempt = retrieve + rerank + 2 LLM calls):
+
+  | Scenario | Ollama CPU/GPU | rerank ms | LLM call ms | per attempt ms |
+  |---|---|---|---|---|
+  | (a) reranker on GPU, loaded first, Ollama auto | 36%/64% | 1,598 | 9,980 | 21,779 |
+  | (a) reranker on GPU, LLM loaded first, Ollama auto | 36%/64% | 1,543 | 10,148 | 22,037 |
+  | (b) reranker on CPU (fp32), Ollama auto | 36%/64% | 39,700 | 5,586 | 50,919 |
+  | **(a) + LLM capped at 22 GPU layers** | 41%/59% | 1,427 | **6,370** | **14,376** |
+  | (a) + 18 layers | 50%/50% | 1,311 | 17,445 | 36,348 |
+  | (a) + 14 layers | 60%/40% | 1,075 | 18,661 | 38,445 |
+
+- **Chosen:** (a) with `[llm] num_gpu = 22`, 34% faster per attempt than Ollama's automatic choice. The LLM call (6.4 s) gets close to its uncontended speed (5.6 s, scenario b, where the reranker is off the GPU), and reranking stays on GPU. Moving the reranker to CPU frees the GPU for the LLM but makes reranking 25× slower. Fewer than 22 layers falls off a cliff (LLM 17–19 s).
+- **Quality:** the CPU fp32 and GPU fp16 rerankers gave identical top-5 lists on all 12 queries, so the device choice is purely about speed.
+- **Limits:** 20 and 24 layers were not measured (that re-run was killed by host memory pressure). 22 is the best measured point, not a proven optimum, and it is machine-specific: the value lives in config.
+
+### D30. Grader prompt grade-v2: inference from on-topic passages counts as sufficient
+- **Problem:** with `grade-v1` (D27) the loop raised abstention on `abstention_set` from 0.809 to 0.934 but cut `dev_sample` correctness from 0.908 to 0.858 (false abstention 0.020 → 0.086; 23 questions correct in M3 became wrong or refused, 8 the other way). In 24 of the 26 grader refusals the gold section was already in the first-attempt top-5. The reasons nearly all read "the passages mention X but do not *explicitly* state …", so v1 demanded verbatim answers, which abstractive questions rarely have (their false abstention went 0.011 → 0.106).
+- **Chosen:** `grade-v2`: sufficient when the passages cover the subject the question names and an answer can be stated, summarised or reasonably inferred from them; insufficient only when they are about a different method, model, dataset or paper, or the key entity or quantity does not appear at all. Rewriter, retry limit and generator are unchanged.
+- **Alternatives:** keep v1 and accept the drop; on the last attempt let the generator decide instead of the grader (keeps rescues, but the generator alone abstained only 0.809 in M3).
+- **Measured** (`results/m4_graph_*.json` = v1, `results/m4_graph_v2_*.json` = v2, M3 = `results/m3_hybrid_rerank_*.json`):
+
+  | | M3 | M4 v1 | **M4 v2** |
+  |---|---|---|---|
+  | Correct (`dev_sample`) | 0.908 | 0.858 | **0.908** |
+  | False abstention | 0.020 | 0.086 | 0.033 |
+  | Abstention on `abstention_set` | 0.809 | 0.934 | **0.882** |
+  | Avg retries (dev / abstention) | 0 | 0.234 / 1.862 | 0.086 / 1.737 |
+  | Paired flips vs M3 (gained / lost) | | 8 / 23 | 8 / 8 |
+
+- **Why v2:** it keeps M3's answer quality (correct 0.908 = 0.908, correct-when-answered 0.926 → 0.939) and still raises abstention by 7.3 points. v1 bought 5 more abstention points with 5 points of correctness on answerable questions, the wrong trade for a QA engine whose questions are mostly answerable. The prompt was changed once, after reading the v1 failures on `dev_sample`. It was not tuned further, and the same split is still the only one it has been measured on, so `full` (M6) is the honest test.
