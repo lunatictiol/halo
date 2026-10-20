@@ -262,3 +262,25 @@ All numbers below: `dev_sample` (n=303), from `results/m3_ablation.md` and the `
 
 - **Why v2:** out-of-range citations go 13 → 0, removed sentences 2.7% → 0.5%, 6 sentences are re-attributed instead of removed, and correctness recovers 0.884 → 0.894. Of the 12 `dev_sample` questions correct in M4 and wrong in v2, 11 had no sentence removed and no grounding abstention, so they come from the reworded generation prompt (8 questions flip the other way); 1 is the check correctly refusing an answer from outside knowledge (inheritance). Abstention on `abstention_set` drops 0.882 → 0.868 for the same reason: the grader's 124 refusals are unchanged (replayed), but under cite-v2 the generator answered 5 questions it refused in M4, against 3 new refusals (2 from the grounding check, 1 from the generator).
 - **Caveat:** cite-v2 was designed after reading v1's failures on `dev_sample`, so its dev numbers are optimistic; `full` (M6) is the clean test.
+
+### D35. check-v2: one joint check per sentence, and uncited sentences are checked too
+- **Problem:** the 10-answer review of cite-v2 + check-v1 found 3 invalid answers (D33). Two were structural holes in the check: a two-claim sentence kept because one of its passages supported one claim (per-pair checks, "any supported" keeps the sentence), and an uncited sentence contradicting the evidence (uncited sentences were never checked). The third was a loose inference the checker passed.
+- **Chosen** (`check-v2`): (B) one check per sentence: "do the cited passages, taken together, support every part of the claim?"; supported → kept with all its citations. (A) A failed *or uncited* sentence is tried against each other passage alone and attributed to the first that supports it, otherwise removed. The prompt wording changed only as far as B needs ("passages taken together", "every part"); it was deliberately not made stricter about inference, to avoid tuning to the 3 examples. Ceiling: a sentence that needs two passages and cited the wrong ones is removed, because attribution tries single passages.
+- **Alternatives:** C, a stricter checker prompt (targets loose inference, risks check-v1-era "not explicitly stated" over-refusal and overfitting to the review sample); a stronger checker model (no second model fits the GPU; a hosted one is a config swap to measure).
+- **Measured** (`results/m5_check_v2_*.json` vs `results/m5_cite_v2_*.json`; same generator prompt, and 302/303 `dev_sample` raw answers are byte-identical, so every difference is the check):
+
+  | | M4 v2 | cite-v2 + check-v1 | **cite-v2 + check-v2** |
+  |---|---|---|---|
+  | Correct (`dev_sample`) | 0.908 | 0.894 | **0.901** |
+  | Correct when answered | 0.939 | 0.928 | 0.938 |
+  | Faithful, final answer | 0.986 | 0.980 | 0.986 |
+  | False abstention | 0.033 | 0.036 | 0.040 |
+  | Citation validity (self-checked) | – | 0.971 | 0.976 |
+  | Coverage, final answer | – | 0.929 | 1.000 (by construction) |
+  | Sentences removed | – | 0.005 | 0.010 |
+  | Sentences (re-)attributed | – | 6 | 60 |
+  | Abstention on `abstention_set` | 0.882 | 0.868 | 0.862 |
+  | Median end-to-end ms (stitched) | 16,214 | 24,922 | 26,732 |
+
+- **Manual review** (`results/m5_check_v2_report.md`; reviewed by Claude against the passage excerpts, verdicts accepted by me): **new seeded sample (seed 6) 10/10 valid**; three borderline claims were checked against the full passage text and are stated there. **Re-review of the cite-v2 sample still 7/10**: none of the 3 failures was fixed. The two-claim sentence passed the joint check; the loose inference passed again; the uncited contradicting "Yes" was now checked but judged supported and *given* a citation, which makes a wrong claim look grounded. The inheritance answer (from outside knowledge, refused by check-v1) now passes too. On the other side, check-v2 removed 2 wrong answers on `dev_sample` that check-v1 had kept.
+- **Why keep check-v2:** structurally it asks the right questions (all sentences checked, claims judged against their passages jointly), it matches or beats check-v1 on every answer metric except false abstention (+0.004, 1 question), and the fresh review sample is clean. **Known limitation:** the remaining errors are the qwen3:8b checker being lenient, so self-checked validity (0.976) overstates real validity; across the 20 reviewed answers, 17 were valid. The next lever is the checker model, not more policy code.
