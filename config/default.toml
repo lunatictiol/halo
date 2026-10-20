@@ -164,3 +164,28 @@ WHY THE RESULTS FELL SHORT: {reason}
 
 Write one new search query that is more likely to retrieve the passage answering the question. Use the specific \
 technical terms, method names and quantities the answer would contain. Do not repeat a query already tried."""
+
+[cite]
+# M5: the graph's generator cites passages by label; code maps [Pn] -> (paper, section, page) (D31). The
+# single-pipeline [generate] prompt is unchanged so M2/M3 runs stay reproducible.
+prompt_version = "cite-v2"  # v1 numbered passages [1]..[5], colliding with bibliography markers in chunk text (D34)
+system_prompt = """You answer questions about research papers using ONLY the context passages you are given, labelled [P1], [P2], ... Do not use outside knowledge. Answer directly and concisely, in at most a few sentences. End every sentence with the label of the passage that supports it in square brackets, for example [P2], or [P1][P3] when it combines two passages. Cite only passages that state what the sentence says. Numbers in square brackets inside the passages, such as [21], are the papers' own references: never copy them. If the passages do not contain the information needed to answer the question, reply with exactly {sentinel} and nothing else."""
+# Grounding check: one call per sentence against all its cited passages together; a failed or uncited
+# sentence is (re-)attributed to another single passage that supports it, if any (D32, D34, D35).
+# v1 checked each (sentence, passage) pair alone and never checked uncited sentences.
+check_prompt_version = "check-v2"
+check_max_tokens = 150
+check_parse_retries = 1
+check_system_prompt = """You verify citations in answers about research papers. \
+Respond only with JSON containing "reason" (one sentence) and "verdict"."""
+check_prompt = """Decide whether the PASSAGES, taken together, support the CLAIM, a sentence from an answer to the QUESTION.
+- "supported": every part of what the claim states is said in the passages or follows directly from them. Paraphrase and summary are fine.
+- "unsupported": some part of the claim is not said in the passages, or contradicts them.
+Judge only these passages and this claim; do not use outside knowledge.
+
+QUESTION: {question}
+
+CLAIM: {claim}
+
+PASSAGES:
+{passages}"""

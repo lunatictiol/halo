@@ -26,6 +26,7 @@ def _stub_nodes(sufficient_on_attempt: int | None) -> dict:
                                        else "insufficient", "reason": "missing X"}}, {}),
         "rewrite": lambda s: ({"query": f"rewrite {s['attempts']}"}, {}),
         "generate": lambda s: ({"answer": "42", "abstained": False}, {}),
+        "verify": lambda s: ({"raw_answer": s["answer"]}, {}),
         "abstain": lambda s: ({"answer": "INSUFFICIENT_EVIDENCE: missing X", "abstained": True,
                                "abstain_reason": s["grade"]["reason"]}, {}),
     }
@@ -46,12 +47,12 @@ def test_never_sufficient_stops_at_retry_limit_and_abstains(max_retries):
 
 def test_rescued_on_retry_answers_from_rewritten_query():
     out = build_graph(_stub_nodes(sufficient_on_attempt=2), max_retries=2).invoke({"question": "q"})
-    assert _nodes_run(out) == ["retrieve", "rerank", "grade", "rewrite", "retrieve", "rerank", "grade", "generate"]
+    assert _nodes_run(out) == ["retrieve", "rerank", "grade", "rewrite", "retrieve", "rerank", "grade", "generate", "verify"]
     assert out["tried"] == ["q", "rewrite 1"]
     assert out["question"] == "q" and out["answer"] == "42" and not out["abstained"]
 
 
 def test_sufficient_first_try_skips_rewrite():
     out = build_graph(_stub_nodes(sufficient_on_attempt=1), max_retries=2).invoke({"question": "q"})
-    assert _nodes_run(out) == ["retrieve", "rerank", "grade", "generate"]
+    assert _nodes_run(out) == ["retrieve", "rerank", "grade", "generate", "verify"]
     assert all("ms" in t for t in out["trace"])

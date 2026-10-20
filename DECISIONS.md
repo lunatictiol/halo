@@ -224,3 +224,63 @@ All numbers below: `dev_sample` (n=303), from `results/m3_ablation.md` and the `
   | Paired flips vs M3 (gained / lost) | | 8 / 23 | 8 / 8 |
 
 - **Why v2:** it keeps M3's answer quality (correct 0.908 = 0.908, correct-when-answered 0.926 → 0.939) and still raises abstention by 7.3 points. v1 bought 5 more abstention points with 5 points of correctness on answerable questions, the wrong trade for a QA engine whose questions are mostly answerable. The prompt was changed once, after reading the v1 failures on `dev_sample`. It was not tuned further, and the same split is still the only one it has been measured on, so `full` (M6) is the honest test.
+
+### D31. Citation format: the model cites passage labels, code maps them to (paper, section, page)
+- **Chosen:** the generator sees passages labelled `[P1]..[Pn]` and ends each sentence with labels (`[P2]`, `[P1][P3]`). After generation, code replaces each label with `[paper §section p.page]` from that chunk's metadata.
+- **Alternatives:** ask the model to write the paper ID, section and page itself; cite at answer level (one source list at the end).
+- **Why:** a label can only point at a passage that was actually retrieved, so the model cannot invent a paper ID or page number. A label outside 1..n is recorded as `out_of_range` (invalid, no LLM call). Sentence-level labels are what make a per-sentence support check possible; an answer-level list cannot say which claim came from where.
+
+### D32. Grounding check policy: one LLM check per (sentence, cited passage); remove unsupported, keep uncited but flag
+- **Chosen** (`check-v1`, `halo/generate/cite.py`): for each sentence and each passage it cites, qwen3:8b answers `{reason, verdict: supported | unsupported}` (schema-constrained, same `classify` as the grader). A sentence with at least one supported citation is kept, with its unsupported citations stripped. A cited sentence with no supported citation is removed (after re-attribution, D34). An uncited sentence is kept but lowers coverage. If no grounded sentence remains, the answer becomes an abstention ("grounding check: no claim is supported by a cited passage"). A checker parse failure does not keep a sentence (same rule as the grader) and is excluded from validity.
+- **Alternatives:** one whole-answer check (cheaper, but cannot say which claim is unsupported); flag-only (keep everything, mark it); also remove uncited sentences (would delete connective or summary sentences the model legitimately leaves uncited).
+- **Why:** CLAUDE.md asks for unsupported claims to be flagged *or removed*. Removal is the stricter, user-visible behaviour, and its measured cost is small: 0.5% of sentences removed on `dev_sample` with cite-v2 (`results/m5_cite_v2_dev_sample.json`). Latency cost: median end-to-end 16,214 ms (M4) → 24,922 ms (stitched, D33); the per-pair checks are most of it.
+
+### D33. Citation validity is self-checked; M5 is evaluated by replaying M4's graph checkpoints
+- **Validity:** the share of the pre-check answer's citations that the pipeline checker labels supported. It is the checker grading its own pipeline, and it is labelled "self-checked" everywhere. Independent signals: the whole-answer faithfulness judge (pre- and post-check) and the 10-answer manual review in `results/m5_cite_v2_report.md`.
+- **Alternatives:** a separate judge model for validity (no second local model fits the 6 GB GPU next to qwen3:8b; Gemini adds a dependency and cost); hand-labelling all ~500 citations (too slow).
+- **Replay:** M5 reuses `m4_graph_v2`'s hits, grader verdicts and retries from its `graph.jsonl` and reruns only generate + verify (`--replay-from`). Every difference vs M4 is due to the citation prompt or the check, not to retrieval or grader nondeterminism. Latency is stitched: M4 graph time − M4 generate time + new generate time + verify time.
+- **Limit found:** the faithfulness judge rated all 16 check-changed cite-v1 answers faithful *before* the check (`results/m5_cite_dev_sample.json`: `faithful_raw` 0.983 = `faithful` 0.983), so the whole-answer judge is too lenient to see what the per-sentence checker catches. Faithfulness is not the metric that shows the check's value; the removed-sentence examples are.
+- **Manual review (cite-v2, 10 seeded answers in `results/m5_cite_v2_report.md`):** the checker kept every sentence of all 10 as grounded; I judged the citations valid in 7/10 (agreement 0.70, vs self-checked validity 0.971). The 3 disagreements: Review 2, a two-part sentence kept because one citation supports one part, while the unsupported part's citation was stripped and the claim stayed; Review 7, an overreaching inference the checker passed; Review 10, an uncited opening "Yes" that contradicts the cited passage (uncited sentences are never checked, D32), plus a table-asterisk inference the checker passed. So self-checked validity overstates real citation quality.
+
+### D34. cite-v2: P-prefixed labels and re-attribution of failed citations
+- **Problem (cite-v1, plain `[1]..[n]` labels, `results/m5_cite_dev_sample.json`):** 533 citations: 508 supported, 12 unsupported, 13 out of range. The out-of-range "citations" were the papers' own bibliography markers (`[21][31]`, `[11]`, `[12]`) copied from passage text, and 4 sentences were removed only because of them. Of the 6 correctness losses caused by the check, 3 were correct catches (answers from outside knowledge: QuickSort, inheritance) and 3 were checker misses, 2 of them where the supporting text was in a different retrieved passage than the one cited.
+- **Chosen:** (1) passages are labelled `[Pn]` and the parser reads only `[Pn]`; bracketed numbers are stripped as bibliography markers. (2) A cited sentence with no supported citation is checked against the other retrieved passages and re-attributed to the first one that supports it. Validity is still computed on the generator's original citations, so re-attribution does not inflate it; re-attributions are counted separately. `check-v1` is unchanged.
+- **Alternatives:** keep v1 and accept the removals; switch to flag-only.
+- **Measured** (`results/m5_cite_*.json` = v1, `results/m5_cite_v2_*.json` = v2, M4 = `results/m4_graph_v2_*.json`):
+
+  | | M4 v2 | M5 v1 | **M5 v2** |
+  |---|---|---|---|
+  | Correct (`dev_sample`) | 0.908 | 0.884 | **0.894** |
+  | Correct when answered | 0.939 | 0.927 | 0.928 |
+  | Faithful, final answer | 0.986 | 0.983 | 0.980 |
+  | False abstention | 0.033 | 0.046 | 0.036 |
+  | Citation validity (self-checked) | – | 0.964 | 0.971 |
+  | Citation coverage (pre-check / final) | – | 0.941 / 0.940 | 0.927 / 0.929 |
+  | Sentences removed | – | 0.027 | 0.005 |
+  | Out-of-range citations | – | 13 | 0 |
+  | Abstention on `abstention_set` | 0.882 | 0.888 | 0.868 |
+
+- **Why v2:** out-of-range citations go 13 → 0, removed sentences 2.7% → 0.5%, 6 sentences are re-attributed instead of removed, and correctness recovers 0.884 → 0.894. Of the 12 `dev_sample` questions correct in M4 and wrong in v2, 11 had no sentence removed and no grounding abstention, so they come from the reworded generation prompt (8 questions flip the other way); 1 is the check correctly refusing an answer from outside knowledge (inheritance). Abstention on `abstention_set` drops 0.882 → 0.868 for the same reason: the grader's 124 refusals are unchanged (replayed), but under cite-v2 the generator answered 5 questions it refused in M4, against 3 new refusals (2 from the grounding check, 1 from the generator).
+- **Caveat:** cite-v2 was designed after reading v1's failures on `dev_sample`, so its dev numbers are optimistic; `full` (M6) is the clean test.
+
+### D35. check-v2: one joint check per sentence, and uncited sentences are checked too
+- **Problem:** the 10-answer review of cite-v2 + check-v1 found 3 invalid answers (D33). Two were structural holes in the check: a two-claim sentence kept because one of its passages supported one claim (per-pair checks, "any supported" keeps the sentence), and an uncited sentence contradicting the evidence (uncited sentences were never checked). The third was a loose inference the checker passed.
+- **Chosen** (`check-v2`): (B) one check per sentence: "do the cited passages, taken together, support every part of the claim?"; supported → kept with all its citations. (A) A failed *or uncited* sentence is tried against each other passage alone and attributed to the first that supports it, otherwise removed. The prompt wording changed only as far as B needs ("passages taken together", "every part"); it was deliberately not made stricter about inference, to avoid tuning to the 3 examples. Ceiling: a sentence that needs two passages and cited the wrong ones is removed, because attribution tries single passages.
+- **Alternatives:** C, a stricter checker prompt (targets loose inference, risks check-v1-era "not explicitly stated" over-refusal and overfitting to the review sample); a stronger checker model (no second model fits the GPU; a hosted one is a config swap to measure).
+- **Measured** (`results/m5_check_v2_*.json` vs `results/m5_cite_v2_*.json`; same generator prompt, and 302/303 `dev_sample` raw answers are byte-identical, so every difference is the check):
+
+  | | M4 v2 | cite-v2 + check-v1 | **cite-v2 + check-v2** |
+  |---|---|---|---|
+  | Correct (`dev_sample`) | 0.908 | 0.894 | **0.901** |
+  | Correct when answered | 0.939 | 0.928 | 0.938 |
+  | Faithful, final answer | 0.986 | 0.980 | 0.986 |
+  | False abstention | 0.033 | 0.036 | 0.040 |
+  | Citation validity (self-checked) | – | 0.971 | 0.976 |
+  | Coverage, final answer | – | 0.929 | 1.000 (by construction) |
+  | Sentences removed | – | 0.005 | 0.010 |
+  | Sentences (re-)attributed | – | 6 | 60 |
+  | Abstention on `abstention_set` | 0.882 | 0.868 | 0.862 |
+  | Median end-to-end ms (stitched) | 16,214 | 24,922 | 26,732 |
+
+- **Manual review** (`results/m5_check_v2_report.md`; reviewed by Claude against the passage excerpts, verdicts accepted by me): **new seeded sample (seed 6) 10/10 valid**; three borderline claims were checked against the full passage text and are stated there. **Re-review of the cite-v2 sample still 7/10**: none of the 3 failures was fixed. The two-claim sentence passed the joint check; the loose inference passed again; the uncited contradicting "Yes" was now checked but judged supported and *given* a citation, which makes a wrong claim look grounded. The inheritance answer (from outside knowledge, refused by check-v1) now passes too. On the other side, check-v2 removed 2 wrong answers on `dev_sample` that check-v1 had kept.
+- **Why keep check-v2:** structurally it asks the right questions (all sentences checked, claims judged against their passages jointly), it matches or beats check-v1 on every answer metric except false abstention (+0.004, 1 question), and the fresh review sample is clean. **Known limitation:** the remaining errors are the qwen3:8b checker being lenient, so self-checked validity (0.976) overstates real validity; across the 20 reviewed answers, 17 were valid. The next lever is the checker model, not more policy code.
