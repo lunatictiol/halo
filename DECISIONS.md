@@ -296,3 +296,18 @@ All numbers below: `dev_sample` (n=303), from `results/m3_ablation.md` and the `
 - **Chosen:** keep embedded (local-mode) Qdrant for the full index, despite qdrant-client's warning above 20,000 points. Dense search is a brute-force scan in local mode, but first-stage retrieval (dense + BM25 + RRF) measured 267-808 ms per query after warm-up on the first 10 `full`-index queries, against a 24 s median end-to-end. The LLM calls dominate, so a Qdrant server would buy nothing measurable here. The FastAPI app holds one graph and serialises `/query` with a lock: the LLM, reranker and embedded Qdrant share one 6 GB GPU and one process.
 - **Alternatives:** a Qdrant server in Docker (needed for multi-process serving or a much larger corpus; it is the first step of the cloud-deployment backlog item); async/concurrent request handling (requests would just queue on the GPU).
 - **Why:** no new infrastructure for a latency that is <4% of a query. Revisit when the API serves more than one user.
+
+### D38. Final configuration on the full corpus, and why it scores lower than on the dev sample
+- **Chosen:** the M5 pipeline (`m5_check_v2`: hybrid + rerank, corrective loop, cite-v2 + check-v2), unchanged, on the 980-paper `full` index, run on `dev_sample`, `abstention_set` and all 2,893 `full` questions (`results/m6_graph_*.json`). No retuning on `full`: it is the held-back test of choices made on `dev_sample`.
+- **Measured** (`results/m6_graph_full.json`, `results/m6_report.md`):
+
+  | | Dev index, `dev_sample` | Full index, `dev_sample` | Full index, `full` |
+  |---|---|---|---|
+  | R@5 | 0.937 | 0.927 | 0.917 |
+  | Correct | 0.901 | 0.898 | 0.841 |
+  | Correct, text | 0.941 | 0.931 | 0.907 |
+  | Abstention on `abstention_set` | 0.862 | 0.776 | – |
+
+  `full` also: faithful 0.979, false abstention 0.061, citation validity 0.981, 0 queries over the retry limit, median 28.7 s/question. 4 judge errors (2 correctness verdicts missing, n=2,891).
+- **Why it drops:** index size costs little (same questions: R@5 −0.010, Correct −0.003). The `full` drop is the question set: within the one full run, the other 2,590 questions score 0.835 Correct vs 0.894 for `dev_sample`, with nearly equal R@5 (0.915 vs 0.927), so the gap is in answering (correct-if-answered 0.892 vs 0.934), refusals (0.063 vs 0.043) and text-image questions (0.699 vs 0.806). `dev_sample` was the tuning set for every prompt and threshold, so it is optimistic. Of 427 wrong answers there, 216 had gold in the top-5, 164 were refusals, 47 were retrieval misses: the next lever is the LLM, not retrieval.
+- **Abstention drop** (0.862 → 0.776, 21 → 34 answered): with 10× the distractors, the grader finds near-miss passages more often. 17/34 answers had an official distractor as the top passage, and 24/34 were graded sufficient at the first attempt. Not hand-checked; some may be genuinely answerable from another paper (the CLAUDE.md caveat).
