@@ -222,6 +222,7 @@ From [`results/m6_report.md`](results/m6_report.md), each comparison changes one
 
 - **Text only.** Figures and tables are not parsed, so questions whose answer lives in an image or a table are answered from surrounding prose or not at all. The modality rows above show the gap.
 - **Same model generates and judges.** `qwen3:8b` is both generator and LLM judge, so the judge can prefer its own phrasing. Judge sanity was spot-checked by hand in M2 and M5 (see [`DECISIONS.md`](DECISIONS.md)), not measured against human labels at scale.
+- **Citation validity is self-checked and overstated.** The "Cite valid" column is the pipeline's own grounding check (0.97+). When I reviewed 10 cited answers by hand, 7 had valid citations (M5, [`DECISIONS.md`](DECISIONS.md) D35): the checker passes overreaching inferences and two-part sentences where only one part is supported.
 - **Abstention is tested on a proxy.** `abstention_set` questions come from papers that are never indexed. Another indexed paper can occasionally answer one, so a few "wrong" answers there may be right.
 - **Small local model.** An 8B model at Q4 on a 6 GB GPU, with tens of seconds per question (median in the table). A hosted model is a config change (`[models] llm`) that has not been measured.
 - **One query at a time.** The API serializes requests: one local GPU, embedded single-process Qdrant.
