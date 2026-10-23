@@ -99,7 +99,7 @@ def gemini_chat(system: str, user: str, model: str, max_tokens: int, cfg: dict, 
     req = urllib.request.Request(f"{g['url']}/models/{model}:generateContent", json.dumps(body).encode(),
                                  {"Content-Type": "application/json", "x-goog-api-key": _env(g["api_key_env"])})
     start = time.perf_counter()
-    resp = _post(req, llm)
+    resp = _post(req, llm | {"http_retries": g["http_retries"]})
     ms = round((time.perf_counter() - start) * 1000)
     usage = resp.get("usageMetadata", {})
     parts = resp.get("candidates", [{}])[0].get("content", {}).get("parts", [])
