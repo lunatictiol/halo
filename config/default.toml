@@ -103,6 +103,7 @@ Answer:"""
 
 [judge]
 # Judge model is recorded in every results file. Same model as the generator: see DECISIONS.md D18 on self-preference.
+provider = "ollama"
 model = "qwen3:8b"
 prompt_version = "judge-v1"
 max_tokens = 200
@@ -130,6 +131,34 @@ QUESTION: {question}
 REFERENCE: {reference}
 
 CANDIDATE: {answer}"""
+
+# Alternative judges, swapped into [judge] by name (eval.judge.with_judge). Same prompts, different model (M7).
+[judges.qwen]
+provider = "ollama"
+model = "qwen3:8b"
+
+[judges.gemini]
+provider = "gemini"
+model = "gemini-2.5-flash"
+
+[gemini]
+url = "https://generativelanguage.googleapis.com/v1beta"
+api_key_env = "GEMINI_API_KEY"
+# 0 disables 2.5 Flash's default dynamic thinking: greedy, no hidden reasoning, like the local judge (think = false).
+thinking_budget = 0
+
+[calibration]
+# M7: blind human labels vs each judge on a seeded sample of the M6 headline runs (D39).
+# Correctness needs a valid reference, so it samples dev_sample only. Faithfulness also samples the answered
+# abstention_set questions: dev_sample has only 3 "unsupported" verdicts out of 290 judged.
+correctness_runs = ["m6_graph_dev_sample"]
+faithfulness_runs = ["m6_graph_dev_sample", "m6_graph_abstention_set"]
+seed = 20261023
+per_kind = 25
+# Negatives (by the local judge's verdict) are oversampled up to this share; without it, kappa would rest on two
+# or three disagreements.
+negative_share = 0.4
+judges = ["qwen", "gemini"]
 
 [graph]
 # M4 corrective loop: retrieve -> rerank -> grade -> (rewrite -> retrieve)* -> generate | abstain (D26-D28).

@@ -1,10 +1,14 @@
-"""Minimal Ollama chat client shared by generation and the eval judge. Deterministic settings from [llm]."""
+"""Minimal Ollama chat client shared by generation and the eval judge. Deterministic settings from [llm].
+A Gemini client serves the hosted eval judge (M7, DECISIONS.md D39); generation stays local."""
 
 import json
+import os
 import re
 import time
 import urllib.error
 import urllib.request
+
+from halo.config import ROOT
 
 
 _FENCE = re.compile(r"^```(?:json)?\s*|\s*```$")
@@ -20,13 +24,14 @@ class VerdictParseError(ValueError):
 
 def _post(req: urllib.request.Request, llm: dict) -> dict:
     """POST with bounded retries on server-side failures (Ollama returns 500 transiently while swapping
-    models in and out of the 6 GB of VRAM). Client errors (4xx) are bugs and raise immediately."""
+    models in and out of the 6 GB of VRAM) and on 429 rate limits (hosted judge). Other 4xx are bugs and raise
+    immediately."""
     for attempt in range(llm["http_retries"] + 1):
         try:
             with urllib.request.urlopen(req, timeout=llm["timeout_seconds"]) as r:
                 return json.load(r)
         except urllib.error.HTTPError as e:
-            if e.code < 500 or attempt == llm["http_retries"]:
+            if (e.code < 500 and e.code != 429) or attempt == llm["http_retries"]:
                 raise
         except urllib.error.URLError:
             if attempt == llm["http_retries"]:
@@ -61,6 +66,43 @@ def chat(system: str, user: str, model: str, max_tokens: int, cfg: dict, schema:
             "output_tokens": output_tokens, "ms": ms}
 
 
+def _env(name: str) -> str:
+    """Environment first, then the gitignored .env file at the repo root."""
+    if name in os.environ:
+        return os.environ[name]
+    env = ROOT / ".env"
+    for line in env.read_text(encoding="utf-8").splitlines() if env.exists() else []:
+        key, _, value = line.partition("=")
+        if key.strip() == name:
+            return value.strip().strip("\"'")
+    raise RuntimeError(f"{name} is not set (environment or .env)")
+
+
+def gemini_chat(system: str, user: str, model: str, max_tokens: int, cfg: dict, schema: dict | None = None) -> dict:
+    """Same contract as chat(), against the Gemini REST API. Thinking is off and decoding greedy, matching the
+    local judge's settings so the comparison is between models, not decoding setups."""
+    llm, g = cfg["llm"], cfg["gemini"]
+    gen = {"temperature": llm["temperature"], "seed": llm["seed"], "maxOutputTokens": max_tokens,
+           "thinkingConfig": {"thinkingBudget": g["thinking_budget"]}}
+    if schema is not None:
+        gen |= {"responseMimeType": "application/json", "responseJsonSchema": schema}  # standard JSON Schema, keys emitted in order
+    body = {"systemInstruction": {"parts": [{"text": system}]},
+            "contents": [{"role": "user", "parts": [{"text": user}]}], "generationConfig": gen}
+    req = urllib.request.Request(f"{g['url']}/models/{model}:generateContent", json.dumps(body).encode(),
+                                 {"Content-Type": "application/json", "x-goog-api-key": _env(g["api_key_env"])})
+    start = time.perf_counter()
+    resp = _post(req, llm)
+    ms = round((time.perf_counter() - start) * 1000)
+    usage = resp.get("usageMetadata", {})
+    parts = resp.get("candidates", [{}])[0].get("content", {}).get("parts", [])
+    return {"content": "".join(p.get("text", "") for p in parts).strip(),
+            "prompt_tokens": usage.get("promptTokenCount", 0), "output_tokens": usage.get("candidatesTokenCount", 0),
+            "ms": ms}
+
+
+CHAT = {"ollama": chat, "gemini": gemini_chat}
+
+
 def verdict_schema(allowed: tuple[str, ...]) -> dict:
     """Reason before verdict, so the model states its evidence before committing to a label (DECISIONS.md D18)."""
     return {"type": "object", "required": ["reason", "verdict"],
@@ -81,13 +123,14 @@ def parse_verdict(text: str, allowed: tuple[str, ...]) -> tuple[str, str]:
 
 
 def classify(system: str, prompt: str, allowed: tuple[str, ...], model: str, max_tokens: int, retries: int,
-             cfg: dict) -> dict:
+             cfg: dict, provider: str = "ollama") -> dict:
     """Schema-constrained label + reason, retrying on unparseable output. A persistent failure is recorded
     (verdict None), not guessed. Decoding is greedy, so a retry only differs by a larger token budget (the
     likely cause is truncated JSON)."""
     errors = []
     for attempt in range(1 + retries):
-        resp = chat(system, prompt, model, max_tokens * (attempt + 1), cfg, schema=verdict_schema(allowed))
+        resp = CHAT[provider](system, prompt, model, max_tokens * (attempt + 1), cfg,
+                              schema=verdict_schema(allowed))
         try:
             verdict, reason = parse_verdict(resp["content"], allowed)
             return {"verdict": verdict, "reason": reason, "ms": resp["ms"]}

@@ -13,7 +13,13 @@ CORRECTNESS = ("correct", "incorrect")
 
 def _judge(prompt: str, allowed: tuple[str, ...], cfg: dict) -> dict:
     j = cfg["judge"]
-    return classify(j["system_prompt"], prompt, allowed, j["model"], j["max_tokens"], j["parse_retries"], cfg)
+    return classify(j["system_prompt"], prompt, allowed, j["model"], j["max_tokens"], j["parse_retries"], cfg,
+                    j["provider"])
+
+
+def with_judge(cfg: dict, name: str | None) -> dict:
+    """cfg with [judges.<name>] swapped into [judge]; prompts and limits stay shared. None = the default judge."""
+    return cfg if name is None else cfg | {"judge": cfg["judge"] | cfg["judges"][name]}
 
 
 def judge_faithfulness(question: str, answer: str, chunks: list[dict], cfg: dict) -> dict:
