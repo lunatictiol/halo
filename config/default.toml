@@ -139,13 +139,19 @@ model = "qwen3:8b"
 
 [judges.gemini]
 provider = "gemini"
-model = "gemini-2.5-flash"
+model = "gemini-2.5-flash"  # free tier: 20 requests/day, too few for M7 (D39)
+
+[judges.gemma]
+provider = "gemini"
+model = "gemma-4-31b-it"
 
 [gemini]
 url = "https://generativelanguage.googleapis.com/v1beta"
 api_key_env = "GEMINI_API_KEY"
 # 0 disables 2.5 Flash's default dynamic thinking: greedy, no hidden reasoning, like the local judge (think = false).
 thinking_budget = 0
+# Space hosted calls so the free tier's per-minute limit is never hit (2.5 Flash: 10/min).
+min_interval_seconds = 6.5
 
 [calibration]
 # M7: blind human labels vs each judge on a seeded sample of the M6 headline runs (D39).
@@ -158,7 +164,7 @@ per_kind = 25
 # Negatives (by the local judge's verdict) are oversampled up to this share; without it, kappa would rest on two
 # or three disagreements.
 negative_share = 0.4
-judges = ["qwen", "gemini"]
+judges = ["qwen", "gemma"]
 
 [graph]
 # M4 corrective loop: retrieve -> rerank -> grade -> (rewrite -> retrieve)* -> generate | abstain (D26-D28).

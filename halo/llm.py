@@ -78,12 +78,20 @@ def _env(name: str) -> str:
     raise RuntimeError(f"{name} is not set (environment or .env)")
 
 
+_last_gemini = 0.0
+
+
 def gemini_chat(system: str, user: str, model: str, max_tokens: int, cfg: dict, schema: dict | None = None) -> dict:
     """Same contract as chat(), against the Gemini REST API. Thinking is off and decoding greedy, matching the
     local judge's settings so the comparison is between models, not decoding setups."""
+    global _last_gemini
     llm, g = cfg["llm"], cfg["gemini"]
-    gen = {"temperature": llm["temperature"], "seed": llm["seed"], "maxOutputTokens": max_tokens,
-           "thinkingConfig": {"thinkingBudget": g["thinking_budget"]}}
+    # ponytail: process-local pacing, fine for one sequential run; a shared limiter if calls ever go concurrent.
+    time.sleep(max(0.0, _last_gemini + g["min_interval_seconds"] - time.monotonic()))
+    _last_gemini = time.monotonic()
+    gen = {"temperature": llm["temperature"], "seed": llm["seed"], "maxOutputTokens": max_tokens}
+    if not model.startswith("gemma"):  # Gemma rejects thinkingConfig (400); with a JSON schema it emits no thoughts
+        gen["thinkingConfig"] = {"thinkingBudget": g["thinking_budget"]}
     if schema is not None:
         gen |= {"responseMimeType": "application/json", "responseJsonSchema": schema}  # standard JSON Schema, keys emitted in order
     body = {"systemInstruction": {"parts": [{"text": system}]},
@@ -95,7 +103,7 @@ def gemini_chat(system: str, user: str, model: str, max_tokens: int, cfg: dict, 
     ms = round((time.perf_counter() - start) * 1000)
     usage = resp.get("usageMetadata", {})
     parts = resp.get("candidates", [{}])[0].get("content", {}).get("parts", [])
-    return {"content": "".join(p.get("text", "") for p in parts).strip(),
+    return {"content": "".join(p.get("text", "") for p in parts if not p.get("thought")).strip(),
             "prompt_tokens": usage.get("promptTokenCount", 0), "output_tokens": usage.get("candidatesTokenCount", 0),
             "ms": ms}
 
