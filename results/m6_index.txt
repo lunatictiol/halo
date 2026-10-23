@@ -1,0 +1,16 @@
+# M6 full-corpus index (60153 chunks)
+  [OK] every full-split paper indexed: 980/980 papers
+  [OK] no held_out paper indexed: 0 found
+  [OK] chunks with paper_id, section_id, page: 60153/60153
+  [OK] no duplicate (paper_id, chunk_idx): max copies 1
+  chunks per paper: median 52.0, min 5, max 756
+
+## Papers without Vectara sections (indexed under section -1): 3
+  2405.03168v2: 24 chunks, 'Fate of Two-Particle Bound States in the Continuum in non-Hermitian\n  Systems'
+  2407.16584v4: 18 chunks, 'The need to implement FAIR principles in biomolecular simulations'
+  2411.04433v3: 22 chunks, 'Enhanced transverse electron transport via disordered composite\n  formation'
+
+## qrels sections covered by >=1 chunk (full split)
+  sections: 2187/2189 mapped; questions whose gold section has no chunk: 3/2893 (0.1%), a hard retrieval ceiling
+    unmapped 2404.14603v2 s35 (2 questions, 772 chars): '# Part 2: $\\mathcal{T}=\\left\\{\\tau_{0}\\right\\}$ \n\nIn this case, we seek to maximize $\\mathbb{P}\\left'
+    unmapped 2407.11613v2 s3 (1 questions, 1500 chars): "# 3. THE DEMOCRATIC INPUT PROJECT'S ASSUMPTIONS\n## 3a. Scalability\n\nFor us, the key assumption under"

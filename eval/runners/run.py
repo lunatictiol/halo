@@ -353,6 +353,7 @@ def main() -> None:
     p.add_argument("--stages", help=f"default: {','.join(STAGES)} (single) or {','.join(GRAPH_STAGES)} (graph)")
     p.add_argument("--limit", type=int, help="first N queries only (smoke test; separate run directory)")
     p.add_argument("--fresh", action="store_true", help="discard this run's checkpoints first")
+    p.add_argument("--collection", help="override [retrieve] collection; M1-M5 runs used dev_slice (D36)")
     a = p.parse_args()
     allowed = GRAPH_STAGES if a.pipeline == "graph" else STAGES
     stages = a.stages.split(",") if a.stages else list(allowed)
@@ -361,6 +362,8 @@ def main() -> None:
     cfg = load_config()
     if a.method:
         cfg["retrieve"]["method"] = a.method  # lands in the config snapshot of the results file
+    if a.collection:
+        cfg["retrieve"]["collection"] = a.collection
     if a.replay_from and a.pipeline != "graph":
         p.error("--replay-from needs --pipeline graph")
     loop_name = "m5_cite" if a.replay_from else "m4_graph"

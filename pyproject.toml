@@ -5,12 +5,14 @@ description = "Grounded question answering over research papers with corrective 
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "bm25s>=0.3.14",
+    "fastapi>=0.155.0",
     "langgraph>=1.2.16",
     "pymupdf>=1.24",
     "pystemmer>=3.1.0",
     "qdrant-client>=1.12",
     "sentence-transformers>=6.1.0",
     "torch>=2.11.0",
+    "uvicorn>=0.30",
 ]
 
 [dependency-groups]

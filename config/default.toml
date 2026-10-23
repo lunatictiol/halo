@@ -56,7 +56,9 @@ http_retries = 3
 retry_backoff_seconds = 5
 
 [retrieve]
-collection = "dev_slice"
+# M6: the shipped index is all 980 indexable papers. M1-M5 results used "dev_slice"; reproduce them with
+# `eval.runners.run --collection dev_slice` (D36).
+collection = "full"
 # Retrieval metrics are computed on k_eval chunks; the generator sees the top k_context (DECISIONS.md D19).
 k_eval = 10
 k_context = 5
@@ -189,3 +191,7 @@ CLAIM: {claim}
 
 PASSAGES:
 {passages}"""
+
+[api]
+# Longest accepted question; the longest Open RAG Bench question is 197 characters.
+max_question_chars = 1000
