@@ -1,6 +1,6 @@
 import random
 
-from eval.runners.calibrate import calibration, draw
+from eval.runners.calibrate import calibration, confusion, draw
 
 
 def _pool(n_neg, n_pos):
@@ -35,3 +35,11 @@ def test_calibration_scores_each_judge_against_human_and_each_other():
     assert cal["faithfulness"]["b_vs_human"] == {"n": 2, "agreement": 0.5, "kappa": 0.0}
     assert cal["correctness"]["a_vs_b"]["agreement"] == 0.5
     assert cal["correctness"]["human_negatives"] == 1
+
+
+def test_confusion_counts_judge_to_human_pairs():
+    items = [{"item_id": "c1", "kind": "correctness"}, {"item_id": "c2", "kind": "correctness"}]
+    human = {"c1": "correct", "c2": "incorrect"}
+    judged = {"a": {"c1": {"verdict": "correct"}, "c2": {"verdict": "correct"}}}
+    assert confusion(items, human, judged)["correctness"]["a"] == {
+        "correct->correct": 1, "correct->incorrect": 1, "incorrect->correct": 0, "incorrect->incorrect": 0}

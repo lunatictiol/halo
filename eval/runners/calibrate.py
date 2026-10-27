@@ -165,9 +165,45 @@ def cmd_report(cfg: dict) -> None:
                      | {n: judged[n][it["item_id"]]["verdict"] for n in judged}
                      | {f"{n}_reason": judged[n][it["item_id"]]["reason"] for n in judged}
                      for it in items if any(judged[n][it["item_id"]]["verdict"] != human[it["item_id"]] for n in judged)]
+    conf = confusion(items, human, judged)
     out = write_results("m7_judge_calibration", {"judges": models, "n_items": len(items), "calibration": cal,
-                                                 "disagreements": disagreements}, cfg)
-    print(f"wrote {out}")
+                                                 "confusion": conf, "disagreements": disagreements}, cfg)
+    md = out.with_suffix(".md")
+    md.write_text(to_markdown(models, cal, conf, out.name), encoding="utf-8")
+    print(f"wrote {out} and {md.name}")
+
+
+def confusion(items: list[dict], human: dict[str, str], judged: dict[str, dict[str, dict]]) -> dict:
+    """Per kind and judge: count of (judge verdict, human label) pairs, keyed 'judge->human'."""
+    out = {}
+    for kind in ("faithfulness", "correctness"):
+        ids = [it["item_id"] for it in items if it["kind"] == kind]
+        out[kind] = {n: {f"{j}->{h}": sum(judged[n][i]["verdict"] == j and human[i] == h for i in ids)
+                         for j in LABELS_OF[kind] for h in LABELS_OF[kind]} for n in judged}
+    return out
+
+
+def to_markdown(models: dict[str, str], cal: dict, conf: dict, source: str) -> str:
+    lines = ["# M7 judge calibration", "",
+             f"Generated from [`{source}`]({source}) by `eval.runners.calibrate report`. 25 faithfulness and 25 "
+             "correctness items, labeled blind; negatives oversampled by the qwen verdict (D39), so agreement here "
+             "is not the population agreement.", "",
+             "| Kind | Judge | Model | n | Agreement | Cohen's κ |", "|---|---|---|---|---|---|"]
+    for kind, block in cal.items():
+        lines += [f"| {kind} | {n} | `{models[n]}` | {block[f'{n}_vs_human']['n']} | "
+                  f"{block[f'{n}_vs_human']['agreement']} | {block[f'{n}_vs_human']['kappa']} |" for n in models]
+    lines += ["", "Judge vs judge and human negatives:", ""]
+    for kind, block in cal.items():
+        pairs = ", ".join(f"{k.replace('_vs_', ' vs ')} κ {v['kappa']}" for k, v in block.items()
+                          if isinstance(v, dict) and "human" not in k)
+        lines.append(f"- **{kind}:** {pairs}; {block['human_negatives']} of 25 labeled negative by me.")
+    lines += ["", "## Confusion (judge verdict → my label)", ""]
+    for kind, by_judge in conf.items():
+        cols = list(next(iter(by_judge.values())))
+        lines += [f"**{kind}**", "", "| Judge | " + " | ".join(cols) + " |", "|---|" + "---|" * len(cols)]
+        lines += [f"| {n} | " + " | ".join(str(c[k]) for k in cols) + " |" for n, c in by_judge.items()]
+        lines.append("")
+    return "\n".join(lines)
 
 
 def main() -> None:
