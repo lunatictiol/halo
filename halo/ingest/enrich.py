@@ -48,7 +48,8 @@ def situate(chunk: dict, doc: dict, cfg: dict) -> dict:
     e = cfg["enrich"]
     prompt = e["user_prompt"].format(title=" ".join(doc["title"].split()), abstract=" ".join(doc["abstract"].split()),
                                      section=chunk["section_title"] or "(untitled)", passage=chunk["text"])
-    return chat(e["system_prompt"], prompt, e["model"], e["max_tokens"], cfg)
+    # [enrich] num_gpu overrides [llm]: the generator's value leaves room for the reranker, unused at ingest.
+    return chat(e["system_prompt"], prompt, e["model"], e["max_tokens"], cfg | {"llm": cfg["llm"] | {"num_gpu": e["num_gpu"]}})
 
 
 def enrich(chunks: list[dict], doc: dict, cfg: dict, cache: EnrichCache, stats: dict) -> list[dict]:

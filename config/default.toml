@@ -34,7 +34,10 @@ min_match = 0.3
 [enrich]
 # M9 contextual enrichment: an LLM writes 1-2 lines situating each chunk in its paper, prepended to the chunk for
 # embedding, BM25 and reranking only (D42). Cached by (model, prompt_version, paper, chunk text): re-runs are free.
-model = "qwen3:8b"
+# gemma3 (4B, ollama id a2af6cc3eb7f): same-quality context lines at half qwen3:8b's time per chunk (D42,
+# results/m9_enrich_pilot.json). All layers on GPU: the reranker is not loaded while ingesting.
+model = "gemma3"
+num_gpu = 99
 prompt_version = "enrich-v1"
 max_tokens = 100
 cache_path = "data/cache/enrich.jsonl"
