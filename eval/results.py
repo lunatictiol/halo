@@ -8,7 +8,7 @@ from pathlib import Path
 from halo.config import ROOT
 
 RESULTS_DIR = ROOT / "results"
-# Everything a metric depends on: an uncommitted change here means the numbers cannot be traced to a commit.
+# Everything a metric depends on: an uncommitted change to a tracked file here means the numbers cannot be traced to a commit.
 TRACKED_INPUTS = ("halo", "eval", "config", "splits", "pyproject.toml", "uv.lock")
 
 
@@ -18,7 +18,7 @@ def _git(*args: str) -> str:
 
 def git_state() -> dict:
     """Commit plus a dirty flag: numbers from a dirty tree cannot be traced to code exactly."""
-    return {"commit": _git("rev-parse", "--short", "HEAD"), "dirty": bool(_git("status", "--porcelain", "--", *TRACKED_INPUTS))}
+    return {"commit": _git("rev-parse", "--short", "HEAD"), "dirty": bool(_git("status", "--porcelain", "--untracked-files=no", "--", *TRACKED_INPUTS))}
 
 
 def write_results(run_name: str, payload: dict, cfg: dict, out_dir: Path = RESULTS_DIR) -> Path:
