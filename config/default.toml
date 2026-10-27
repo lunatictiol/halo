@@ -64,7 +64,7 @@ k_eval = 10
 k_context = 5
 recall_ks = [5, 10]
 # dense | bm25 | hybrid (RRF of dense + BM25) | hybrid_rerank (cross-encoder over the fused list). DECISIONS.md D24.
-method = "hybrid_rerank"
+method = "hybrid"
 # Each retriever returns this many; RRF output is cut to it before reranking (D22). Recall@k_candidates is
 # reported as the ceiling a reranker can reach.
 k_candidates = 50
