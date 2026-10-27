@@ -20,7 +20,7 @@ import statistics
 import time
 from pathlib import Path
 
-from eval.judge import judge_correctness, judge_faithfulness
+from eval.judge import judge_correctness, judge_faithfulness, with_judge
 from eval.metrics.abstention import is_abstention
 from eval.metrics.answer import _score, answer_scores
 from eval.metrics.citation import citation_scores, citation_totals
@@ -309,13 +309,16 @@ def prepare_run_dir(run_name: str, cfg: dict, fresh: bool) -> Path:
 
 
 def run(split: str, run_name: str, stages: list[str], limit: int | None, fresh: bool, cfg: dict,
-        pipeline: str = "single", replay_from: str | None = None) -> None:
+        pipeline: str = "single", replay_from: str | None = None, rejudge_from: str | None = None) -> None:
     queries = load_queries(split, cfg)[:limit]
     run_dir = prepare_run_dir(run_name, cfg, fresh)
     ret_path, gen_path, jud_path = run_dir / "retrieve.json", run_dir / "generate.jsonl", run_dir / "judge.jsonl"
     graphed = None
     if pipeline == "graph":
         graph_path = run_dir / "graph.jsonl"
+        if rejudge_from and not graph_path.exists():
+            # M7: judge a finished run's saved answers again (e.g. with another judge); nothing is regenerated.
+            shutil.copy(data_dir(cfg) / "runs" / f"{rejudge_from}_{split}" / "graph.jsonl", graph_path)
         if "graph" in stages and replay_from:
             replay_all(queries, data_dir(cfg) / "runs" / f"{replay_from}_{split}" / "graph.jsonl", graph_path, cfg)
         elif "graph" in stages:
@@ -354,6 +357,9 @@ def main() -> None:
     p.add_argument("--limit", type=int, help="first N queries only (smoke test; separate run directory)")
     p.add_argument("--fresh", action="store_true", help="discard this run's checkpoints first")
     p.add_argument("--collection", help="override [retrieve] collection; M1-M5 runs used dev_slice (D36)")
+    p.add_argument("--judge", help="use [judges.<name>] instead of the default [judge], e.g. gemini (M7)")
+    p.add_argument("--rejudge-from", help="graph only: judge this graph run's saved answers again, e.g. m6_graph "
+                                         "(implies --stages judge,score)")
     a = p.parse_args()
     allowed = GRAPH_STAGES if a.pipeline == "graph" else STAGES
     stages = a.stages.split(",") if a.stages else list(allowed)
@@ -364,12 +370,15 @@ def main() -> None:
         cfg["retrieve"]["method"] = a.method  # lands in the config snapshot of the results file
     if a.collection:
         cfg["retrieve"]["collection"] = a.collection
-    if a.replay_from and a.pipeline != "graph":
-        p.error("--replay-from needs --pipeline graph")
+    if (a.replay_from or a.rejudge_from) and a.pipeline != "graph":
+        p.error("--replay-from and --rejudge-from need --pipeline graph")
+    if a.rejudge_from:
+        stages = ["judge", "score"]
+    cfg = with_judge(cfg, a.judge)
     loop_name = "m5_cite" if a.replay_from else "m4_graph"
     default_name = loop_name if a.pipeline == "graph" else "m3_" + cfg["retrieve"]["method"]
     run_name = f"{a.name or default_name}_{a.split}" + (f"_limit{a.limit}" if a.limit else "")
-    run(a.split, run_name, stages, a.limit, a.fresh, cfg, a.pipeline, a.replay_from)
+    run(a.split, run_name, stages, a.limit, a.fresh, cfg, a.pipeline, a.replay_from, a.rejudge_from)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,397 @@
+{
+  "run": "m7_judge_calibration",
+  "timestamp": "2026-10-27T13:15:09+00:00",
+  "git": {
+    "commit": "d4f20c6",
+    "dirty": true
+  },
+  "generator_model": "qwen3:8b",
+  "judge_model": "qwen3:8b",
+  "config": {
+    "data": {
+      "hf_base_url": "https://huggingface.co/datasets/vectara/open_ragbench/resolve/main/pdf/arxiv",
+      "data_dir": "data",
+      "arxiv_pdf_host": "https://export.arxiv.org",
+      "arxiv_delay_seconds": 3.0,
+      "http_timeout_seconds": 60,
+      "http_retries": 5
+    },
+    "splits": {
+      "seed": 20261003,
+      "held_out_papers": 20,
+      "dev_sample_min_questions": 300,
+      "dev_distractors": 60
+    },
+    "models": {
+      "llm": "qwen3:8b",
+      "embedding": "nomic-embed-text",
+      "ollama_url": "http://127.0.0.1:11434"
+    },
+    "ingest": {
+      "chunk_words": 300,
+      "overlap_words": 50,
+      "shingle_n": 5,
+      "min_match": 0.3
+    },
+    "index": {
+      "qdrant_path": "data/index/qdrant",
+      "embed_batch": 64,
+      "doc_prefix": "search_document: ",
+      "query_prefix": "search_query: "
+    },
+    "llm": {
+      "temperature": 0,
+      "seed": 0,
+      "num_ctx": 8192,
+      "think": false,
+      "num_gpu": 22,
+      "timeout_seconds": 600,
+      "http_retries": 3,
+      "retry_backoff_seconds": 5
+    },
+    "retrieve": {
+      "collection": "full",
+      "k_eval": 10,
+      "k_context": 5,
+      "recall_ks": [
+        5,
+        10
+      ],
+      "method": "hybrid_rerank",
+      "k_candidates": 50,
+      "rrf_k": 60
+    },
+    "bm25": {
+      "k1": 1.5,
+      "b": 0.75,
+      "stemmer": "english",
+      "stopwords": "en"
+    },
+    "rerank": {
+      "model": "BAAI/bge-reranker-v2-m3",
+      "max_length": 512,
+      "batch_size": 16,
+      "device": "cuda"
+    },
+    "generate": {
+      "prompt_version": "baseline-v1",
+      "max_tokens": 400,
+      "sentinel": "INSUFFICIENT_EVIDENCE",
+      "system_prompt": "You answer questions about research papers using ONLY the numbered context passages you are given. Do not use outside knowledge. Answer directly and concisely, in at most a few sentences. If the passages do not contain the information needed to answer the question, reply with exactly {sentinel} and nothing else.",
+      "user_prompt": "Context passages:\n\n{context}\n\nQuestion: {question}\n\nAnswer:"
+    },
+    "judge": {
+      "provider": "ollama",
+      "model": "qwen3:8b",
+      "prompt_version": "judge-v1",
+      "max_tokens": 200,
+      "parse_retries": 1,
+      "system_prompt": "You are a strict, impartial grader for a question-answering system over research papers. Respond only with JSON containing \"reason\" (one sentence) and \"verdict\".",
+      "faithfulness_prompt": "Decide whether the ANSWER is supported by the CONTEXT.\n- \"supported\": every factual claim in the answer is stated in, or directly inferable from, the context.\n- \"unsupported\": at least one claim is absent from or contradicts the context.\nJudge only support by the context, not whether the answer is correct or complete.\n\nQUESTION: {question}\n\nCONTEXT:\n{context}\n\nANSWER: {answer}",
+      "correctness_prompt": "Decide whether the CANDIDATE answer is correct, using the REFERENCE answer as ground truth.\n- \"correct\": the candidate conveys the key facts of the reference and does not contradict it. Different wording, extra detail, or omitting secondary details is fine.\n- \"incorrect\": the candidate misses the main point, contradicts the reference, or answers a different question.\n\nQUESTION: {question}\n\nREFERENCE: {reference}\n\nCANDIDATE: {answer}"
+    },
+    "judges": {
+      "qwen": {
+        "provider": "ollama",
+        "model": "qwen3:8b"
+      },
+      "gemini": {
+        "provider": "gemini",
+        "model": "gemini-2.5-flash"
+      },
+      "gemma": {
+        "provider": "gemini",
+        "model": "gemma-4-31b-it"
+      },
+      "llama": {
+        "provider": "ollama",
+        "model": "llama3.1:8b"
+      }
+    },
+    "gemini": {
+      "url": "https://generativelanguage.googleapis.com/v1beta",
+      "api_key_env": "GEMINI_API_KEY",
+      "thinking_budget": 0,
+      "min_interval_seconds": 6.5,
+      "http_retries": 8
+    },
+    "calibration": {
+      "correctness_runs": [
+        "m6_graph_dev_sample"
+      ],
+      "faithfulness_runs": [
+        "m6_graph_dev_sample",
+        "m6_graph_abstention_set"
+      ],
+      "seed": 20261023,
+      "per_kind": 25,
+      "negative_share": 0.4,
+      "judges": [
+        "qwen",
+        "llama"
+      ]
+    },
+    "graph": {
+      "max_retries": 2,
+      "retrieve_method": "hybrid",
+      "grade_prompt_version": "grade-v2",
+      "grade_max_tokens": 150,
+      "grade_parse_retries": 1,
+      "grade_system_prompt": "You check whether passages retrieved from research papers contain the information needed to answer a question. Respond only with JSON containing \"reason\" (one sentence) and \"verdict\".",
+      "grade_prompt": "Decide whether the PASSAGES give enough to answer the QUESTION.\n- \"sufficient\": the passages cover the subject the question asks about (the same method, model, concept or result), and an answer can be stated, summarised or reasonably inferred from what they say. The passages do not need to state the answer in the question's own words.\n- \"insufficient\": the passages are about a different method, model, dataset or paper than the one the question names, or the key entity or quantity the question asks about does not appear in them at all.\nDo not answer the question and do not use outside knowledge. If insufficient, the reason must name what is missing.\n\nQUESTION: {question}\n\nPASSAGES:\n{context}",
+      "rewrite_prompt_version": "rewrite-v1",
+      "rewrite_max_tokens": 60,
+      "rewrite_system_prompt": "You write search queries for a keyword + semantic search engine over research papers. Output only the new query, on one line, with no explanation.",
+      "rewrite_prompt": "A search did not find passages that answer the question.\n\nQUESTION: {question}\n\nQUERIES ALREADY TRIED:\n{tried}\n\nWHY THE RESULTS FELL SHORT: {reason}\n\nWrite one new search query that is more likely to retrieve the passage answering the question. Use the specific technical terms, method names and quantities the answer would contain. Do not repeat a query already tried."
+    },
+    "cite": {
+      "prompt_version": "cite-v2",
+      "system_prompt": "You answer questions about research papers using ONLY the context passages you are given, labelled [P1], [P2], ... Do not use outside knowledge. Answer directly and concisely, in at most a few sentences. End every sentence with the label of the passage that supports it in square brackets, for example [P2], or [P1][P3] when it combines two passages. Cite only passages that state what the sentence says. Numbers in square brackets inside the passages, such as [21], are the papers' own references: never copy them. If the passages do not contain the information needed to answer the question, reply with exactly {sentinel} and nothing else.",
+      "check_prompt_version": "check-v2",
+      "check_max_tokens": 150,
+      "check_parse_retries": 1,
+      "check_system_prompt": "You verify citations in answers about research papers. Respond only with JSON containing \"reason\" (one sentence) and \"verdict\".",
+      "check_prompt": "Decide whether the PASSAGES, taken together, support the CLAIM, a sentence from an answer to the QUESTION.\n- \"supported\": every part of what the claim states is said in the passages or follows directly from them. Paraphrase and summary are fine.\n- \"unsupported\": some part of the claim is not said in the passages, or contradicts them.\nJudge only these passages and this claim; do not use outside knowledge.\n\nQUESTION: {question}\n\nCLAIM: {claim}\n\nPASSAGES:\n{passages}"
+    },
+    "api": {
+      "max_question_chars": 1000
+    }
+  },
+  "judges": {
+    "qwen": "qwen3:8b",
+    "llama": "llama3.1:8b"
+  },
+  "n_items": 50,
+  "calibration": {
+    "faithfulness": {
+      "qwen_vs_human": {
+        "n": 25,
+        "agreement": 0.76,
+        "kappa": 0.4828
+      },
+      "llama_vs_human": {
+        "n": 25,
+        "agreement": 0.64,
+        "kappa": 0.1176
+      },
+      "qwen_vs_llama": {
+        "n": 25,
+        "agreement": 0.72,
+        "kappa": 0.1627
+      },
+      "human_negatives": 10
+    },
+    "correctness": {
+      "qwen_vs_human": {
+        "n": 25,
+        "agreement": 0.8,
+        "kappa": 0.5614
+      },
+      "llama_vs_human": {
+        "n": 25,
+        "agreement": 0.8,
+        "kappa": 0.4813
+      },
+      "qwen_vs_llama": {
+        "n": 25,
+        "agreement": 0.84,
+        "kappa": 0.6429
+      },
+      "human_negatives": 7
+    }
+  },
+  "confusion": {
+    "faithfulness": {
+      "qwen": {
+        "supported->supported": 13,
+        "supported->unsupported": 4,
+        "unsupported->supported": 2,
+        "unsupported->unsupported": 6
+      },
+      "llama": {
+        "supported->supported": 15,
+        "supported->unsupported": 9,
+        "unsupported->supported": 0,
+        "unsupported->unsupported": 1
+      }
+    },
+    "correctness": {
+      "qwen": {
+        "correct->correct": 14,
+        "correct->incorrect": 1,
+        "incorrect->correct": 4,
+        "incorrect->incorrect": 6
+      },
+      "llama": {
+        "correct->correct": 16,
+        "correct->incorrect": 3,
+        "incorrect->correct": 2,
+        "incorrect->incorrect": 4
+      }
+    }
+  },
+  "disagreements": [
+    {
+      "item_id": "f03",
+      "kind": "faithfulness",
+      "human": "unsupported",
+      "qwen": "unsupported",
+      "llama": "supported",
+      "qwen_reason": "The answer references the context to support the claim that model misspecification is a concern for parametric models like GLMs, but the context does not explicitly mention GLMs or directly link model misspecification to parametric models such as GLMs.",
+      "llama_reason": "The answer is supported by the context as it cites specific papers and sections that discuss model misspecification and its implications."
+    },
+    {
+      "item_id": "f05",
+      "kind": "faithfulness",
+      "human": "unsupported",
+      "qwen": "unsupported",
+      "llama": "supported",
+      "qwen_reason": "The answer claims that feature extraction precedes dataset preparation, but the context does not explicitly state the order of these steps. The context describes feature extraction as part of the model development step, which is part of a pipeline that includes hyperparameter tuning and training, but does not clearly establish the order relative to dataset preparation.",
+      "llama_reason": "The feature extraction process is described as part of the model development step, which occurs before the dataset is prepared for training."
+    },
+    {
+      "item_id": "f08",
+      "kind": "faithfulness",
+      "human": "unsupported",
+      "qwen": "unsupported",
+      "llama": "supported",
+      "qwen_reason": "The answer mentions extending CMGF to multivariate distributions and other models with closed-form MGFs, which are directly supported by the context. However, the part about extending to generalized regressions and fairness in machine learning is not mentioned in the provided context.",
+      "llama_reason": "The answer accurately cites the context for two potential future research directions."
+    },
+    {
+      "item_id": "f10",
+      "kind": "faithfulness",
+      "human": "unsupported",
+      "qwen": "supported",
+      "llama": "supported",
+      "qwen_reason": "The answer correctly identifies the Verification theorem as providing a sufficient condition for a candidate Value function to be the actual Value function and for a strategy to be optimal, which is directly stated in the context.",
+      "llama_reason": "The answer is supported by the context as it directly quotes the definition of the Verification theorem from the provided paper [2404.03773v2 §6 p.10]."
+    },
+    {
+      "item_id": "f11",
+      "kind": "faithfulness",
+      "human": "unsupported",
+      "qwen": "supported",
+      "llama": "supported",
+      "qwen_reason": "The answer states that transition weights are uniquely identified in logistic models almost everywhere in specified domains, which is directly supported by the context.",
+      "llama_reason": "The answer is supported by the context, as it directly quotes the relevant section and page number from paper 2404.19707v4."
+    },
+    {
+      "item_id": "f12",
+      "kind": "faithfulness",
+      "human": "unsupported",
+      "qwen": "supported",
+      "llama": "supported",
+      "qwen_reason": "The answer directly references claims from the context about the balance between interaction and controllability enhancing realism and effectiveness in simulations, and mentions specific sections and pages.",
+      "llama_reason": "The answer accurately cites specific sections and pages from the context to support its claims."
+    },
+    {
+      "item_id": "f13",
+      "kind": "faithfulness",
+      "human": "unsupported",
+      "qwen": "unsupported",
+      "llama": "supported",
+      "qwen_reason": "The answer claims that score-based methods minimize the Wasserstein distance during training, but this is not directly stated or inferable from the context. The context mentions score matching and related concepts but does not explicitly state that the Wasserstein distance is minimized during training.",
+      "llama_reason": "The answer is supported by the context because it directly quotes a sentence from the provided paper [2404.09730v3 §3 p.4] stating that score-based generative models 'satisfy the following partial differential equation (PDE): ∂tϱt = −∇· � (x + ∇log qT−t)ϱt � = −∇· (Vtϱt), 0 ≤t ≤T, (3) with Vt(x) := x + ∇log qT−t(x). The score function ∇log qT−t(x) is typically learned by a neural network trained using score matching techniques with progressively corrupted trajectories {Xt} from (1). Subsequently, the reverse PDE can be solved from ϱ0 = qT to sample new data from q0. The reverse PDE (3) is often reformulated into a mean field equation for sampling instead of being directly solved. This mean field equation can manifest as stochastic dynamics dYt = (Yt + 2∇log qT−t(Yt)) dt + √ 2dB′'"
+    },
+    {
+      "item_id": "f14",
+      "kind": "faithfulness",
+      "human": "supported",
+      "qwen": "unsupported",
+      "llama": "supported",
+      "qwen_reason": "The answer claims that requiring fewer relevant subcarriers reduces computational complexity and may indicate higher accuracy, but the context does not directly support the claim that fewer relevant subcarriers indicate higher accuracy.",
+      "llama_reason": "The answer is supported by the context, as it is stated in [5] that requiring fewer relevant subcarriers reduces the computational complexity and improves channel estimation performance."
+    },
+    {
+      "item_id": "f15",
+      "kind": "faithfulness",
+      "human": "unsupported",
+      "qwen": "supported",
+      "llama": "supported",
+      "qwen_reason": "The answer states that the missing data mechanism is assumed to be MAR in the validation exercises and mentions experiments under MNAR as sensitivity analysis, both of which are directly supported by the context.",
+      "llama_reason": "The answer accurately states that the missing data mechanism is assumed to be MAR in the validation exercises, but also acknowledges that experiments under MNAR are conducted as a sensitivity analysis."
+    },
+    {
+      "item_id": "f19",
+      "kind": "faithfulness",
+      "human": "supported",
+      "qwen": "unsupported",
+      "llama": "supported",
+      "qwen_reason": "The answer claims that the main challenge in training energy-based models is intractability and non-convexity due to the nonlinear MC mechanism, but this is not directly stated in the context. The context only mentions these challenges in the context of configuration optimization in a specific paper, not as the main challenge in training energy-based models in general.",
+      "llama_reason": "The answer is supported by the context, as it directly quotes the relevant sentence from paper 2410.04110v3, section 3, page 3."
+    },
+    {
+      "item_id": "f23",
+      "kind": "faithfulness",
+      "human": "unsupported",
+      "qwen": "unsupported",
+      "llama": "supported",
+      "qwen_reason": "The answer mentions grid size impacting spatial context for center-fixing, which is supported by the context, but it also claims that grid size impacts super-resolution live movie analysis, which is not directly addressed in the context.",
+      "llama_reason": "The answer is supported by the context, as it is based on the information provided in [2405.18213v3 §12 p.10] and [2409.16507v2 §16 p.17] regarding the impact of grid size on spatial context and model complexity."
+    },
+    {
+      "item_id": "c02",
+      "kind": "correctness",
+      "human": "incorrect",
+      "qwen": "correct",
+      "llama": "correct",
+      "qwen_reason": "The candidate answer correctly explains the significance of non-local operators in pattern formation models by highlighting their ability to allow pattern formation with longer interaction lengths and sensitivity to spatial dimensions, which aligns with the reference.",
+      "llama_reason": "The candidate answer conveys the key facts of the reference, but uses different wording and omits secondary details."
+    },
+    {
+      "item_id": "c05",
+      "kind": "correctness",
+      "human": "correct",
+      "qwen": "incorrect",
+      "llama": "correct",
+      "qwen_reason": "The candidate provides specific details about universal fjord opening angles that are not present in the reference, which focuses on the general concept rather than specific angles or experimental measurements.",
+      "llama_reason": "The candidate answer accurately conveys the key facts of the reference, including the specific angle and its role in pattern formation, without contradicting or omitting essential details."
+    },
+    {
+      "item_id": "c08",
+      "kind": "correctness",
+      "human": "correct",
+      "qwen": "incorrect",
+      "llama": "incorrect",
+      "qwen_reason": "The candidate correctly states that traditional feature selection methods use data from all classes, but it incorrectly implies that features are selected for each class individually, which contradicts the reference's emphasis on selecting features relevant across different classes.",
+      "llama_reason": "The candidate answer contradicts the reference by implying that traditional feature selection methods focus on individual class-specific features."
+    },
+    {
+      "item_id": "c14",
+      "kind": "correctness",
+      "human": "correct",
+      "qwen": "incorrect",
+      "llama": "correct",
+      "qwen_reason": "The candidate provides additional details not present in the reference, including specific angles and equations of motion, which are not part of the main point about wind direction affecting maneuvers like tacking and jibing.",
+      "llama_reason": "The candidate answer provides a detailed and accurate explanation of the role of wind direction in sailboat maneuvering strategies, including specific angles for optimal upwind and downwind routes."
+    },
+    {
+      "item_id": "c15",
+      "kind": "correctness",
+      "human": "correct",
+      "qwen": "incorrect",
+      "llama": "incorrect",
+      "qwen_reason": "The candidate answer introduces additional context about model flexibility and regimes, which is not present in the reference answer, and does not accurately convey the main purpose of the penalization term as described in the reference.",
+      "llama_reason": "The candidate answer introduces irrelevant information about model size and regimes, and does not accurately convey the purpose of the penalization term."
+    },
+    {
+      "item_id": "c18",
+      "kind": "correctness",
+      "human": "incorrect",
+      "qwen": "incorrect",
+      "llama": "correct",
+      "qwen_reason": "The candidate answer contradicts the reference by providing a different purpose for incorporating feature weights in PCA.",
+      "llama_reason": "The candidate answer provides a different explanation for the purpose of incorporating feature weights in PCA, which is not contradictory to the reference but also does not convey the key fact mentioned in the reference."
+    },
+    {
+      "item_id": "c20",
+      "kind": "correctness",
+      "human": "incorrect",
+      "qwen": "incorrect",
+      "llama": "correct",
+      "qwen_reason": "The candidate answer introduces specific details about score functions and cluster centers not present in the reference, and does not accurately convey the main contribution of piecewise polynomial approximation to function smoothing as described in the reference.",
+      "llama_reason": "The candidate answer conveys the key facts of the reference, including matching target functions at specific points and ensuring continuity, but provides additional details and a different perspective."
+    }
+  ]
+}

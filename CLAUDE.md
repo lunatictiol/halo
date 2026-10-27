@@ -37,10 +37,10 @@ Its purpose is a portfolio project for AI engineering roles. Every claim in the 
 ### Out of scope (backlog, do NOT build unless I ask)
 - Vision-language parsing of figures/tables.
 - Graph index, summary index, multi-index routing.
-- CI regression gate.
 - Bounding-box citations.
 - Cloud deployment.
-- Front-end beyond a minimal API/CLI.
+
+(CI regression gate, the web frontend and Docker moved into scope as M8, M10 and M11.)
 
 ---
 
@@ -227,6 +227,67 @@ Rough hour estimates assume 1–2 hours/day. Each gate must pass before moving o
 
 ---
 
+## Post-MVP milestones (M7–M11)
+
+Same rules as M0–M6: plan first, one milestone at a time, gate before moving on, every number from `results/`. Order matters: M7 makes the judge trustworthy before M9 produces new judged numbers.
+
+### M7 — Judge calibration (≈3–4 h)
+**Build:**
+- Finish the pending M2 manual review (D18 status), then extend it to a hand-labeled calibration set of ~50 verdicts (correctness + faithfulness, seeded sample from `dev_sample` runs, negatives oversampled). Labels saved in `eval/calibration/`.
+- A second judge from a different model family (Gemini or Claude, configured in `[judge]`), so the generator no longer grades itself.
+- Agreement script: raw agreement and Cohen's κ of each judge vs my labels, per verdict kind.
+- Re-score the M6 headline runs (`m6_graph_dev_sample`, `m6_graph_full`, `m6_graph_abstention_set`) with the chosen judge from saved answers. No re-generation.
+
+**Gate:**
+- [ ] κ for both judges against my labels is saved to `results/m7_judge_calibration.md`.
+- [ ] The chosen judge and the reason (with κ) are recorded in DECISIONS.md, and D18's "not done yet" status is closed.
+- [ ] README results are regenerated with the chosen judge, and any number that moved is called out.
+- [ ] The citation-validity gap (self-check 0.971 vs manual 7/10) is stated in README limitations.
+
+### M8 — CI regression gate (≈3–4 h)
+**Build:**
+- GitHub Actions workflow: lint, then `pytest`, then the regression gate.
+- Regression gate on deterministic retrieval metrics (R@5, MRR) on `dev_sample`, with thresholds in config compared against a committed baseline file. LLM metrics stay out of CI (non-deterministic, slow).
+- Open design question for the M8 plan: the index and Ollama aren't available on a hosted runner. Options: (a) a self-hosted runner on this machine, (b) the gate checks a committed results JSON whose `git_commit` must match the PR head, (c) a small cached fixture index. Pick one, record it in DECISIONS.md.
+
+**Gate:**
+- [ ] A PR with a deliberately degraded config (e.g. `rerank` off) fails the gate; a clean PR passes. Both runs are linked.
+- [ ] Thresholds and the baseline file are documented in DECISIONS.md.
+
+### M9 — Contextual enrichment and chunking benchmark (≈8–10 h)
+**Build:**
+- Three chunking strategies over the same `dev_slice`: the current section-aware chunker, fixed-size with overlap, and section-aware + contextual enrichment (1–2 LLM-generated lines prepended to each chunk before embedding and BM25, describing paper and section). Each goes in its own Qdrant collection; enrichment is cached by chunk content hash so re-runs are free.
+- Optional fourth: parent–child retrieval (retrieve small chunks, generate from the parent section). Only if the first three finish in budget.
+- Retrieval ablation on all strategies, then full pipeline on the best one, judged with the M7 judge.
+
+**Gate:**
+- [ ] Table and a chart in README: R@5, R@10, MRR, nDCG@10 per strategy on `dev_sample`, plus ingest time and enrichment cost.
+- [ ] End-to-end Correct / Faithful / abstention for the chosen strategy vs M6 on `dev_sample` and `abstention_set`. Most M6 failures were generation misses (216 of 427), not retrieval, so a retrieval gain may not move Correct; report it either way.
+- [ ] If adopted, the full index is rebuilt and the `full` split re-run; DECISIONS.md has the entry with numbers. If not adopted, say why.
+
+### M10 — Streaming API and web frontend (≈6–8 h)
+**Build:**
+- `POST /query/stream`: Server-Sent Events from the LangGraph run, one event per node (retrieve, rerank, grade, rewrite, generate, check) with timing, then the final answer and citations. The existing `/query` stays.
+- Frontend: htmx + Jinja2 templates served by FastAPI (no npm, no build step), htmx SSE extension. A question box; live step indicators showing the corrective loop (including rewrites and retries); the answer with citation chips (paper, section, page) linking to the arXiv PDF at that page; abstentions shown with their reason; flagged/unsupported sentences visibly marked.
+- Still one query at a time (D37): a second request while one runs gets a clear "busy" response.
+
+**Gate:**
+- [ ] Endpoint tests: event order, final event matches `/query` output for the same question, busy handling.
+- [ ] Manual demo on three saved questions: one direct answer, one rescued by a rewrite, one abstention. Screenshots or a GIF saved for the README.
+- [ ] Time-to-first-event and total latency recorded in `results/`.
+
+### M11 — Docker (≈3–4 h)
+**Build:**
+- `Dockerfile` for the app (uv, Python 3.12, CPU and CUDA variants or a build arg) and `docker-compose.yml` with the app and an Ollama service (GPU via NVIDIA Container Toolkit / WSL2; models pulled on first start).
+- Data and the Qdrant index mounted as volumes, not baked into the image. A documented one-command path to build the index inside the container.
+- Health/readiness check that waits for Ollama and the index.
+
+**Gate:**
+- [ ] On a clean checkout, `docker compose up` plus the documented index step serves the M10 frontend and answers a query end-to-end.
+- [ ] README quickstart has a Docker path next to the uv path; image size and cold-start time recorded.
+
+---
+
 ## Definition of done (MVP)
 - All M0–M6 gates pass.
 - README shows a measured improvement at each stage over the naive baseline.
@@ -234,10 +295,10 @@ Rough hour estimates assume 1–2 hours/day. Each gate must pass before moving o
 - I can explain the architecture, every metric, and every decision without reading notes.
 
 ## Backlog (post-MVP, in priority order)
-1. CI regression gate on `dev_sample` (fail the build if key metrics drop).
-2. Table/figure understanding for image and table questions.
-3. Query routing and additional indexes.
-4. Expose HALO as an MCP server.
+1. Expose HALO as an MCP server.
+2. Abstention drift at full scale (0.862 → 0.776): scope check or a grader threshold calibrated on the full index.
+3. Table/figure understanding for image and table questions.
+4. Query routing and additional indexes.
 5. Cloud deployment.
 
 ## graphify

@@ -117,6 +117,7 @@ Each entry: what was chosen, alternatives, why, and the number that justified it
 - **Chosen:** the judge is the same local qwen3:8b as the generator, temperature 0, `think: false`, output constrained by an Ollama JSON schema `{reason, verdict ∈ enum}` with `reason` first. Unparseable output is retried once with a doubled token budget, then recorded as a judge error (verdict None), never guessed. Prompts are versioned in `config/default.toml` (`judge-v1`) and the judge model is written into every results file.
 - **Alternatives:** Gemini as judge (no self-preference, needs an API key and dependency); free-text verdicts parsed by regex.
 - **Why:** zero cost and no key for the MVP; swapping the judge is a config change. Schema-constrained decoding makes malformed output nearly impossible; putting the reason first makes the model state its evidence before the label. **Known risk — self-preference:** the judge grades its own model's answers. The manual sample (D20) measures this.
+- **Measured (M7, D39):** against 50 blind human labels, κ 0.48 on faithfulness and 0.56 on correctness (moderate). The bias runs in opposite directions: lenient on faithfulness (4 of 17 sampled "supported" were unsupported to me), strict on correctness (4 of 10 sampled "incorrect" were correct to me). Kept as the judge: the different-family llama3.1:8b scored lower on both.
 - **Evidence:** 0 judge errors in 568 dev_sample calls and 19 abstention_set calls.
 
 ### D19. Naive baseline settings: k_context = 5 chunks, num_ctx = 8192, thinking off
@@ -127,8 +128,9 @@ Each entry: what was chosen, alternatives, why, and the number that justified it
 - **Not tuned:** k_context is a starting value; varying it is an M3/M4 ablation.
 - **Traceability note:** generation and judging ran at commit `701e3d2`; the results files were re-scored (score stage only, no LLM calls) at the commit that added `generator_tokens`, which is the commit they record.
 
-### D20. Judge sanity check (manual review of 10 verdicts) — PENDING
-- **Status:** `results/m2_judge_sample.md` holds 10 verdicts (5 faithfulness, 5 correctness; up to 2 negatives per kind oversampled, seed 20261015). The manual agree/disagree review has **not been done yet**, so no agreement rate is recorded. This entry is filled in once it is.
+### D20. Judge sanity check (manual review of 10 verdicts) — SUPERSEDED by D39
+- **Superseded:** replaced by the M7 calibration (D39): 50 blind labels on the final M6 pipeline instead of 10 non-blind ones on the M2 baseline. The 10-item review below was never done.
+- **Status: closed by D39** (M7, 50 blind labels). Original M2 status, kept for the record: `results/m2_judge_sample.md` holds 10 verdicts (5 faithfulness, 5 correctness; up to 2 negatives per kind oversampled, seed 20261015). The manual agree/disagree review has **not been done yet**, so no agreement rate is recorded. This entry is filled in once it is.
 - **Why it matters:** faithfulness is 0.975 overall and 1.000 on abstractive questions with a self-grading judge (D18) — possible leniency. If agreement is low, options are a stricter judge prompt (`judge-v2`) or a Gemini judge before M3 numbers are produced.
 
 ---
@@ -311,3 +313,23 @@ All numbers below: `dev_sample` (n=303), from `results/m3_ablation.md` and the `
   `full` also: faithful 0.979, false abstention 0.061, citation validity 0.981, 0 queries over the retry limit, median 28.7 s/question. 4 judge errors (2 correctness verdicts missing, n=2,891).
 - **Why it drops:** index size costs little (same questions: R@5 −0.010, Correct −0.003). The `full` drop is the question set: within the one full run, the other 2,590 questions score 0.835 Correct vs 0.894 for `dev_sample`, with nearly equal R@5 (0.915 vs 0.927), so the gap is in answering (correct-if-answered 0.892 vs 0.934), refusals (0.063 vs 0.043) and text-image questions (0.699 vs 0.806). `dev_sample` was the tuning set for every prompt and threshold, so it is optimistic. Of 427 wrong answers there, 216 had gold in the top-5, 164 were refusals, 47 were retrieval misses: the next lever is the LLM, not retrieval.
 - **Abstention drop** (0.862 → 0.776, 21 → 34 answered): with 10× the distractors, the grader finds near-miss passages more often. 17/34 answers had an official distractor as the top passage, and 24/34 were graded sufficient at the first attempt. Not hand-checked; some may be genuinely answerable from another paper (the CLAUDE.md caveat).
+
+### D39. Judge calibration: 50 blind human labels, qwen3:8b vs llama3.1:8b, Cohen's kappa
+- **Chosen:** a seeded sample (`[calibration]`, seed 20261023) of 25 faithfulness and 25 correctness verdict inputs from the M6 headline runs, labeled by me **blind** (`eval/calibration/m7_sheet.md` shows no judge output, unlike the M2 sample in D20, which showed the judge's verdict and reason). Each judge gets the identical prompts (`judge-v1`) and inputs the M6 eval judge saw. Agreement with my labels is reported as raw agreement and Cohen's kappa, per verdict kind (`eval/metrics/agreement.py`, `eval/runners/calibrate.py`).
+- **Second judge:** `llama3.1:8b` on the local Ollama (`[judges.llama]`), the same decoding as the qwen judge (temperature 0, fixed seed, JSON-schema-constrained `{reason, verdict}`), so the comparison is between models. A different model family (Meta vs Alibaba) removes self-preference (D18). Local means free, deterministic, and no quota: the re-score of the M6 runs (~6,600 verdicts) is feasible. Cost: a weaker judge than a hosted frontier model, which kappa against my labels shows directly.
+- **Hosted judges tried first, and why they were dropped:**
+  - *Gemini 2.5 Flash* (the planned judge): free tier is 20 requests/day (the API's quota error, after 19 of the 50 verdicts). The re-score would need billing.
+  - *Gemma 4 31B* over the same API (Gemma 3 27B is no longer served): persistent transient 500/503 errors outlasted ~3 min of retries; 6 of 50 verdicts after four resumed runs, 40-110 s per successful call. The re-score would take days.
+  - The client support stays (`halo/llm.py: gemini_chat`, paced by `[gemini] min_interval_seconds`, its own `http_retries`), so a paid hosted judge is a config change. The partial hosted verdicts are not used.
+- **Sampling:** negatives (by qwen's saved verdict) oversampled to up to 40% per kind, because raw rates are ~97% supported / ~94% correct and kappa on a near-constant sample is meaningless. Faithfulness draws from `m6_graph_dev_sample` *and* the answered `m6_graph_abstention_set` questions: `dev_sample` has only 3 "unsupported" verdicts out of 290, so all 8 qwen negatives were taken (17 dev + 8 abstention-set items). Consequence: sample agreement is not the population agreement; kappa is the statistic reported, and the stratification is stated next to it.
+- **Alternatives:** label the 10-item M2 sample (non-blind, wrong pipeline); a Claude Haiku judge or paid Gemini 2.5 Flash (stronger, different families, but need billing at this volume); RAGAS-style metrics (would add a framework and another judge to calibrate).
+- **Results** (`results/m7_judge_calibration.md`, n = 25 per kind; I labeled 10 faithfulness and 7 correctness items negative):
+
+  | Kind | qwen3:8b agreement / κ | llama3.1:8b agreement / κ |
+  |---|---|---|
+  | faithfulness | 0.76 / 0.48 | 0.64 / 0.12 |
+  | correctness | 0.80 / 0.56 | 0.80 / 0.48 |
+
+- **Chosen judge: qwen3:8b, unchanged.** It has the higher κ on both kinds. llama3.1:8b is unusable for faithfulness: it said "supported" on 24 of 25 items, including 9 I labeled unsupported. Self-preference is therefore not the dominant error at this model size; judge capability is.
+- **Consequence for reported numbers:** none move. Re-judging with the chosen judge reproduces the saved M6 verdicts (50 of 50 identical, deterministic decoding), so the M6 results stand as the qwen-judged numbers. What changes is how they are read: the qwen confusion counts say Faithful is overstated (4 of the 17 sampled "supported" answers were unsupported to me) and Correct is understated (4 of the 10 sampled "incorrect" answers were correct to me, 1 of 15 "correct" was not). The sample is stratified, so these are direction and rough size, not corrected population rates. Stated in README limitations.
+- **Next lever, not done:** a stricter faithfulness prompt (`judge-v2`) calibrated on these labels, or a paid hosted judge (config change).
