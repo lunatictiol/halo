@@ -5,7 +5,8 @@ reason first so the model states its evidence before committing to a label (DECI
 """
 
 from halo.generate.baseline import format_context
-from halo.llm import VerdictParseError as JudgeParseError, classify, parse_verdict  # noqa: F401 (re-exported)
+from halo.llm import VerdictParseError as JudgeParseError  # noqa: F401 (re-exported)
+from halo.llm import classify, parse_verdict  # noqa: F401 (parse_verdict re-exported)
 
 FAITHFULNESS = ("supported", "unsupported")
 CORRECTNESS = ("correct", "incorrect")

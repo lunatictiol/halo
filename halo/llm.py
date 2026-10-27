@@ -10,7 +10,6 @@ import urllib.request
 
 from halo.config import ROOT
 
-
 _FENCE = re.compile(r"^```(?:json)?\s*|\s*```$")
 
 

@@ -36,7 +36,7 @@ def latency(retrieved: dict) -> dict:
     return {s: {"median": round(statistics.median(v), 1), "p95": _pctl(v, 95)} for s, v in stages.items()}
 
 
-def evaluate(method: str, split: str, cfg: dict) -> dict:
+def evaluate(method: str, split: str, cfg: dict, name: str | None = None) -> dict:
     cfg = copy.deepcopy(cfg)
     cfg["retrieve"]["method"] = method
     r = cfg["retrieve"]
@@ -55,7 +55,7 @@ def evaluate(method: str, split: str, cfg: dict) -> dict:
     names = [m for m, _ in COLUMNS] + [f"recall@{kc}"]
     payload = {"split": split, "kind": "retrieval_only", "method": method, "n_queries": len(recs),
                "metrics": summarize(recs, names), "latency_ms": latency(retrieved), "per_query": recs}
-    path = write_results(f"m3_retrieval_{method}_{split}", payload, cfg)
+    path = write_results(name or f"m3_retrieval_{method}_{split}", payload, cfg)
     print(f"{method}: wrote {path}", flush=True)
     return json.loads(path.read_text(encoding="utf-8"))
 
