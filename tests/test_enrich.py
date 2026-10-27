@@ -30,5 +30,13 @@ def test_enrich_calls_llm_once_then_reads_cache_from_disk(tmp_path, monkeypatch)
     assert first == second == [{**chunks[0], "context": "From paper X."}]
     assert "context" not in chunks[0]  # input left untouched
     assert calls == ["a"]
-    assert first_stats == {"calls": 1, "prompt_tokens": 10, "output_tokens": 3, "ms": 5}
-    assert second_stats == {"cached": 1}
+    cost = {"prompt_tokens": 10, "output_tokens": 3, "ms": 5}
+    assert first_stats == {"calls": 1, "chunks": 1, **cost}
+    assert second_stats == {"chunks": 1, **cost}  # a cached context's cost still counts; no new call
+
+
+def test_truncated_last_cache_line_is_skipped(tmp_path):
+    path = tmp_path / "c.jsonl"
+    path.write_text('{"key": "k1", "context": "ok"}\n{"key": "k2", "cont', encoding="utf-8")
+    cache = EnrichCache(path)
+    assert cache.get("k1")["context"] == "ok" and cache.get("k2") is None
