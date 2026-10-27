@@ -1,0 +1,32 @@
+# M8: lint -> tests -> retrieval regression gate (D40). The gate checks the committed
+# results/ci_retrieval_dev_sample.json (made locally by `eval.runners.ci run`), since the index and Ollama
+# are not available here.
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # PR head, not the merge commit: the results describe the branch as pushed.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0  # the gate diffs the results commit against HEAD
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      - name: lint
+        run: uv run ruff check .
+      - name: tests
+        run: uv run pytest -q
+      - name: regression gate
+        run: uv run python -m eval.runners.ci check

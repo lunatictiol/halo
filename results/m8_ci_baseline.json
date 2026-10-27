@@ -1,0 +1,12 @@
+{
+  "source": "ci_retrieval_dev_sample",
+  "commit": "02e4133",
+  "split": "dev_sample",
+  "method": "hybrid_rerank",
+  "collection": "full",
+  "n_queries": 303,
+  "metrics": {
+    "recall@5": 0.9372937293729373,
+    "mrr": 0.8154172560113154
+  }
+}

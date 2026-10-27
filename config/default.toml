@@ -236,3 +236,15 @@ PASSAGES:
 [api]
 # Longest accepted question; the longest Open RAG Bench question is 197 characters.
 max_question_chars = 1000
+
+[ci]
+# M8 regression gate (D40). `eval.runners.ci run` writes results/<results>.json locally; CI runs `ci check`
+# against results/<baseline>.json. Only deterministic retrieval metrics: LLM metrics are slow and non-deterministic.
+split = "dev_sample"
+results = "ci_retrieval_dev_sample"
+baseline = "m8_ci_baseline"
+metrics = ["recall@5", "mrr"]
+# Absolute. One query out of 303 moves R@5 by 0.0033, so 0.005 tolerates a single flipped query and nothing more.
+max_drop = 0.005
+# Paths the results depend on; a change here after the results commit means the file is stale.
+watch = ["halo", "config", "splits", "eval/metrics", "eval/runners", "eval/results.py", "pyproject.toml", "uv.lock"]
