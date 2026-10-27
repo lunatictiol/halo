@@ -1,51 +1,51 @@
-item_id,kind,human,note
-f01,faithfulness,,
-f02,faithfulness,,
-f03,faithfulness,,
-f04,faithfulness,,
-f05,faithfulness,,
-f06,faithfulness,,
-f07,faithfulness,,
-f08,faithfulness,,
-f09,faithfulness,,
-f10,faithfulness,,
-f11,faithfulness,,
-f12,faithfulness,,
-f13,faithfulness,,
-f14,faithfulness,,
-f15,faithfulness,,
-f16,faithfulness,,
-f17,faithfulness,,
-f18,faithfulness,,
-f19,faithfulness,,
-f20,faithfulness,,
-f21,faithfulness,,
-f22,faithfulness,,
-f23,faithfulness,,
-f24,faithfulness,,
-f25,faithfulness,,
-c01,correctness,,
-c02,correctness,,
-c03,correctness,,
-c04,correctness,,
-c05,correctness,,
-c06,correctness,,
-c07,correctness,,
-c08,correctness,,
-c09,correctness,,
-c10,correctness,,
-c11,correctness,,
-c12,correctness,,
-c13,correctness,,
-c14,correctness,,
-c15,correctness,,
-c16,correctness,,
-c17,correctness,,
-c18,correctness,,
-c19,correctness,,
-c20,correctness,,
-c21,correctness,,
-c22,correctness,,
-c23,correctness,,
-c24,correctness,,
-c25,correctness,,
+item_id,kind,human,*note*
+f01,faithfulness,supported,
+f02,faithfulness,supported,
+f03,faithfulness,unsupported,"The context does not support the claim about GLMs; the cited excerpts discuss other topics."
+f04,faithfulness,supported,
+f05,faithfulness,unsupported,"The context does not establish that feature extraction precedes dataset preparation."
+f06,faithfulness,supported,
+f07,faithfulness,supported,
+f08,faithfulness,unsupported,"The multivariate MGF direction is supported, but the claims about quantile regression and fairness constraints are not."
+f09,faithfulness,supported,
+f10,faithfulness,unsupported,"The context does not support the stated explanation of the sailboat verification theorem."
+f11,faithfulness,unsupported,"The context does not establish the specific almost-everywhere identification claim."
+f12,faithfulness,unsupported,"The context supports realism, interaction, and controllability as design goals, but not all claims in the answer."
+f13,faithfulness,unsupported,"The context does not support the claim that score-based methods minimize Wasserstein distance during training."
+f14,faithfulness,supported,
+f15,faithfulness,unsupported,"The context discusses MCAR, MAR, and MNAR validation simulations but does not support the stated assumption about MAR and MNAR."
+f16,faithfulness,supported,
+f17,faithfulness,supported,
+f18,faithfulness,supported,
+f19,faithfulness,supported,
+f20,faithfulness,supported,
+f21,faithfulness,unsupported,"The context attributes the accumulation-point property to a corollary, not the Heine–Borel theorem."
+f22,faithfulness,supported,
+f23,faithfulness,unsupported,"The context raises grid size as an experimental question but does not support the stated explanation."
+f24,faithfulness,supported,
+f25,faithfulness,supported,
+c01,correctness,correct,
+c02,correctness,incorrect,"The reference emphasizes non-local influence from distant points, complex patterns, and multistability; the answer gives a narrower, different claim."
+c03,correctness,correct,
+c04,correctness,incorrect,"The answer focuses on KL divergence and scalability, while the reference emphasizes handling non-negative tensors without loops, missing data, and unique low-rank decoupling."
+c05,correctness,correct,
+c06,correctness,correct,
+c07,correctness,correct,
+c08,correctness,correct,
+c09,correctness,correct,
+c10,correctness,correct,
+c11,correctness,incorrect,"The answer gives complexity expressions beyond the reference and misses the key result: linear complexity in the number of nonzero input-tensor elements."
+c12,correctness,incorrect,"The reported runtimes and FNN comparison conflict with the reference."
+c13,correctness,correct,
+c14,correctness,correct,
+c15,correctness,correct,
+c16,correctness,incorrect,"The reference asks about predictors' coefficient effects and signs; the answer discusses precision and MSE improvements instead."
+c17,correctness,correct,
+c18,correctness,incorrect,"The reference describes feature weights emphasizing facial regions for facial-expression recognition; the answer discusses noise-variance weighting."
+c19,correctness,correct,
+c20,correctness,incorrect,"The reference describes matching target functions at points and using a partition of unity for smooth transitions and error bounds; the answer gives a different explanation."
+c21,correctness,correct,
+c22,correctness,correct,
+c23,correctness,correct,
+c24,correctness,correct,
+c25,correctness,correct,
