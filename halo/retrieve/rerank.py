@@ -5,6 +5,8 @@ from functools import cache
 import torch
 from sentence_transformers import CrossEncoder
 
+from halo.ingest.sections import index_text
+
 
 def _device(setting: str) -> str:
     return ("cuda" if torch.cuda.is_available() else "cpu") if setting == "auto" else setting
@@ -21,7 +23,7 @@ def rerank(query: str, hits: list[dict], cfg: dict) -> list[dict]:
     if not hits:
         return []
     scores = _model(r["model"], r["max_length"], _device(r["device"])).predict(
-        [(query, h["text"]) for h in hits], batch_size=r["batch_size"], show_progress_bar=False)
+        [(query, index_text(h)) for h in hits], batch_size=r["batch_size"], show_progress_bar=False)
     order = sorted(range(len(hits)), key=lambda i: -scores[i])
     return [{**hits[i], "score": float(scores[i])} for i in order]
 

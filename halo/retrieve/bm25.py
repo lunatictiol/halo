@@ -3,6 +3,8 @@
 import bm25s
 import Stemmer
 
+from halo.ingest.sections import index_text
+
 
 class BM25Index:
     def __init__(self, chunks: list[dict], cfg: dict):
@@ -11,7 +13,7 @@ class BM25Index:
         self._stemmer = Stemmer.Stemmer(b["stemmer"])
         self._stopwords = b["stopwords"]
         self._bm25 = bm25s.BM25(k1=b["k1"], b=b["b"])
-        self._bm25.index(self.tokenize([c["text"] for c in chunks]), show_progress=False)
+        self._bm25.index(self.tokenize([index_text(c) for c in chunks]), show_progress=False)
 
     def tokenize(self, texts: list[str]) -> list[list[str]]:
         return bm25s.tokenize(texts, stopwords=self._stopwords, stemmer=self._stemmer,
