@@ -51,7 +51,46 @@ def chart(results: dict, method: str, metric: str, label: str) -> list[str]:
             "    bar [" + ", ".join(map(str, vals)) + "]", "```"]
 
 
-def report(results: dict, split: str) -> str:
+def coverage_lines(results: dict, labels: dict[str, set]) -> list[str]:
+    """Fixed-size chunks carry their majority section, so a short gold section may label no chunk at all and be
+    unreachable by construction. Compare strategies on the questions every strategy can reach."""
+    base = _per_query(results, "section", "hybrid_rerank")
+    reachable = {q for q, rec in base.items() if all(tuple(rec["gold"]) in labs for labs in labels.values())}
+    lines = ["", "## Reachable gold sections", "",
+             "A question is reachable when at least one chunk carries its gold (paper, section) label. Fixed-size "
+             "chunks take their majority section, so short sections can label no chunk.", "",
+             "| Strategy | Questions with a reachable gold section |", "|---|---|"]
+    lines += [f"| {s} | {sum(tuple(r['gold']) in labels[s] for r in base.values())} / {len(base)} |"
+              for s in COLLECTIONS if s in labels]
+    lines += ["", f"Metrics on the {len(reachable)} questions reachable by every strategy (R@5 / MRR):", "",
+              "| Strategy | " + " | ".join(METHODS) + " |", "|---" * (len(METHODS) + 1) + "|"]
+    for s in COLLECTIONS:
+        cells = []
+        for m in METHODS:
+            pq = _per_query(results, s, m)
+            cells.append(f"{sum(pq[q]['recall@5'] for q in reachable) / len(reachable):.3f} / "
+                         f"{sum(pq[q]['mrr'] for q in reachable) / len(reachable):.3f}" if pq else "–")
+        lines.append(f"| {s} | " + " | ".join(cells) + " |")
+    return lines
+
+
+def _per_query(results: dict, strategy: str, method: str) -> dict:
+    res = results.get((strategy, method))
+    return {p["query_id"]: p for p in res["per_query"]} if res else {}
+
+
+def section_labels() -> dict[str, set]:
+    """(paper_id, section_id) labels present in each strategy's collection."""
+    from halo.ingest.index import all_payloads, open_index
+    client = open_index(load_config())
+    try:
+        return {s: {(c["paper_id"], c["section_id"]) for c in all_payloads(client, coll)}
+                for s, coll in COLLECTIONS.items() if client.collection_exists(coll)}
+    finally:
+        client.close()
+
+
+def report(results: dict, split: str, labels: dict[str, set] | None = None) -> str:
     any_res = next(iter(results.values()))
     lines = [f"# M9 chunking benchmark on `{split}`", "",
              f"n = {any_res['n_queries']} queries, 100-paper dev_slice index per strategy. Commit "
@@ -80,6 +119,8 @@ def report(results: dict, split: str) -> str:
             blk = res["metrics"][slice_name]
             lines.append(f"| {s} | " + " | ".join(
                 f"{blk[g]['recall@5']['mean']:.3f} / {blk[g]['mrr']['mean']:.3f}" for g in groups) + " |")
+    if labels:
+        lines += coverage_lines(results, labels)
     lines += ["", "## Charts", ""] + chart(results, "hybrid_rerank", "recall@5", "R@5") + [""] \
         + chart(results, "hybrid_rerank", "mrr", "MRR")
     return "\n".join(lines) + "\n"
@@ -90,18 +131,19 @@ def main() -> None:
     p.add_argument("--split", default="dev_sample")
     p.add_argument("--strategies", default=",".join(COLLECTIONS))
     p.add_argument("--methods", default=",".join(METHODS))
+    p.add_argument("--report-only", action="store_true", help="rebuild m9_chunking.md from saved results, no retrieval")
     a = p.parse_args()
     strategies, methods = a.strategies.split(","), a.methods.split(",")
     if bad := (set(strategies) - set(COLLECTIONS)) | (set(methods) - set(METHODS)):
         p.error(f"unknown {sorted(bad)}; strategies {list(COLLECTIONS)}, methods {list(METHODS)}")
     base_cfg = load_config()
-    for s in strategies:
+    for s in [] if a.report_only else strategies:
         cfg = copy.deepcopy(base_cfg)
         cfg["retrieve"]["collection"] = COLLECTIONS[s]
         for m in methods:
             evaluate(m, a.split, cfg, name=result_name(s, m, a.split))
     results = {(s, m): r for s in COLLECTIONS for m in METHODS if (r := _load(result_name(s, m, a.split)))}
-    md = report(results, a.split)
+    md = report(results, a.split, section_labels())
     out = RESULTS_DIR / "m9_chunking.md"
     out.write_text(md, encoding="utf-8")
     print(md)
