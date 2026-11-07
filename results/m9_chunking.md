@@ -39,6 +39,24 @@ Gold rank vs section: queries whose first gold chunk moved up / down in the top-
 | fixed | 0.793 / 0.657 | 0.726 / 0.621 |
 | ctx | 0.922 / 0.797 | 0.968 / 0.894 |
 
+## Reachable gold sections
+
+A question is reachable when at least one chunk carries its gold (paper, section) label. Fixed-size chunks take their majority section, so short sections can label no chunk.
+
+| Strategy | Questions with a reachable gold section |
+|---|---|
+| section | 303 / 303 |
+| fixed | 257 / 303 |
+| ctx | 303 / 303 |
+
+Metrics on the 257 questions reachable by every strategy (R@5 / MRR):
+
+| Strategy | dense | hybrid_rerank |
+|---|---|---|
+| section | 0.887 / 0.720 | 0.957 / 0.856 |
+| fixed | 0.825 / 0.621 | 0.903 / 0.757 |
+| ctx | 0.856 / 0.679 | 0.957 / 0.853 |
+
 ## Charts
 
 ```mermaid
