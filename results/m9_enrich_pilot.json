@@ -1,0 +1,1258 @@
+{
+  "run": "m9_enrich_pilot",
+  "timestamp": "2026-10-27T14:35:33+00:00",
+  "git": {
+    "commit": "458f0a3",
+    "dirty": false
+  },
+  "generator_model": "qwen3:8b",
+  "judge_model": "qwen3:8b",
+  "config": {
+    "data": {
+      "hf_base_url": "https://huggingface.co/datasets/vectara/open_ragbench/resolve/main/pdf/arxiv",
+      "data_dir": "data",
+      "arxiv_pdf_host": "https://export.arxiv.org",
+      "arxiv_delay_seconds": 3.0,
+      "http_timeout_seconds": 60,
+      "http_retries": 5
+    },
+    "splits": {
+      "seed": 20261003,
+      "held_out_papers": 20,
+      "dev_sample_min_questions": 300,
+      "dev_distractors": 60
+    },
+    "models": {
+      "llm": "qwen3:8b",
+      "embedding": "nomic-embed-text",
+      "ollama_url": "http://127.0.0.1:11434"
+    },
+    "ingest": {
+      "chunk_words": 300,
+      "overlap_words": 50,
+      "shingle_n": 5,
+      "min_match": 0.3
+    },
+    "enrich": {
+      "model": "qwen3:8b",
+      "prompt_version": "enrich-v1",
+      "max_tokens": 100,
+      "cache_path": "data/cache/enrich.jsonl",
+      "system_prompt": "You situate passages from research papers so a search engine can find them. Reply with one or two plain sentences and nothing else.",
+      "user_prompt": "Paper title: {title}\n\nAbstract: {abstract}\n\nSection: {section}\n\nPassage:\n{passage}\n\nWrite one or two sentences that situate this passage within the paper: what the paper is about and what this passage specifically covers. Use the paper's key terms. Do not repeat the passage."
+    },
+    "index": {
+      "qdrant_path": "data/index/qdrant",
+      "embed_batch": 64,
+      "doc_prefix": "search_document: ",
+      "query_prefix": "search_query: "
+    },
+    "llm": {
+      "temperature": 0,
+      "seed": 0,
+      "num_ctx": 8192,
+      "think": false,
+      "num_gpu": 22,
+      "timeout_seconds": 600,
+      "http_retries": 3,
+      "retry_backoff_seconds": 5
+    },
+    "retrieve": {
+      "collection": "full",
+      "k_eval": 10,
+      "k_context": 5,
+      "recall_ks": [
+        5,
+        10
+      ],
+      "method": "hybrid_rerank",
+      "k_candidates": 50,
+      "rrf_k": 60
+    },
+    "bm25": {
+      "k1": 1.5,
+      "b": 0.75,
+      "stemmer": "english",
+      "stopwords": "en"
+    },
+    "rerank": {
+      "model": "BAAI/bge-reranker-v2-m3",
+      "max_length": 512,
+      "batch_size": 16,
+      "device": "cuda"
+    },
+    "generate": {
+      "prompt_version": "baseline-v1",
+      "max_tokens": 400,
+      "sentinel": "INSUFFICIENT_EVIDENCE",
+      "system_prompt": "You answer questions about research papers using ONLY the numbered context passages you are given. Do not use outside knowledge. Answer directly and concisely, in at most a few sentences. If the passages do not contain the information needed to answer the question, reply with exactly {sentinel} and nothing else.",
+      "user_prompt": "Context passages:\n\n{context}\n\nQuestion: {question}\n\nAnswer:"
+    },
+    "judge": {
+      "provider": "ollama",
+      "model": "qwen3:8b",
+      "prompt_version": "judge-v1",
+      "max_tokens": 200,
+      "parse_retries": 1,
+      "system_prompt": "You are a strict, impartial grader for a question-answering system over research papers. Respond only with JSON containing \"reason\" (one sentence) and \"verdict\".",
+      "faithfulness_prompt": "Decide whether the ANSWER is supported by the CONTEXT.\n- \"supported\": every factual claim in the answer is stated in, or directly inferable from, the context.\n- \"unsupported\": at least one claim is absent from or contradicts the context.\nJudge only support by the context, not whether the answer is correct or complete.\n\nQUESTION: {question}\n\nCONTEXT:\n{context}\n\nANSWER: {answer}",
+      "correctness_prompt": "Decide whether the CANDIDATE answer is correct, using the REFERENCE answer as ground truth.\n- \"correct\": the candidate conveys the key facts of the reference and does not contradict it. Different wording, extra detail, or omitting secondary details is fine.\n- \"incorrect\": the candidate misses the main point, contradicts the reference, or answers a different question.\n\nQUESTION: {question}\n\nREFERENCE: {reference}\n\nCANDIDATE: {answer}"
+    },
+    "judges": {
+      "qwen": {
+        "provider": "ollama",
+        "model": "qwen3:8b"
+      },
+      "gemini": {
+        "provider": "gemini",
+        "model": "gemini-2.5-flash"
+      },
+      "gemma": {
+        "provider": "gemini",
+        "model": "gemma-4-31b-it"
+      },
+      "llama": {
+        "provider": "ollama",
+        "model": "llama3.1:8b"
+      }
+    },
+    "gemini": {
+      "url": "https://generativelanguage.googleapis.com/v1beta",
+      "api_key_env": "GEMINI_API_KEY",
+      "thinking_budget": 0,
+      "min_interval_seconds": 6.5,
+      "http_retries": 8
+    },
+    "calibration": {
+      "correctness_runs": [
+        "m6_graph_dev_sample"
+      ],
+      "faithfulness_runs": [
+        "m6_graph_dev_sample",
+        "m6_graph_abstention_set"
+      ],
+      "seed": 20261023,
+      "per_kind": 25,
+      "negative_share": 0.4,
+      "judges": [
+        "qwen",
+        "llama"
+      ]
+    },
+    "graph": {
+      "max_retries": 2,
+      "retrieve_method": "hybrid",
+      "grade_prompt_version": "grade-v2",
+      "grade_max_tokens": 150,
+      "grade_parse_retries": 1,
+      "grade_system_prompt": "You check whether passages retrieved from research papers contain the information needed to answer a question. Respond only with JSON containing \"reason\" (one sentence) and \"verdict\".",
+      "grade_prompt": "Decide whether the PASSAGES give enough to answer the QUESTION.\n- \"sufficient\": the passages cover the subject the question asks about (the same method, model, concept or result), and an answer can be stated, summarised or reasonably inferred from what they say. The passages do not need to state the answer in the question's own words.\n- \"insufficient\": the passages are about a different method, model, dataset or paper than the one the question names, or the key entity or quantity the question asks about does not appear in them at all.\nDo not answer the question and do not use outside knowledge. If insufficient, the reason must name what is missing.\n\nQUESTION: {question}\n\nPASSAGES:\n{context}",
+      "rewrite_prompt_version": "rewrite-v1",
+      "rewrite_max_tokens": 60,
+      "rewrite_system_prompt": "You write search queries for a keyword + semantic search engine over research papers. Output only the new query, on one line, with no explanation.",
+      "rewrite_prompt": "A search did not find passages that answer the question.\n\nQUESTION: {question}\n\nQUERIES ALREADY TRIED:\n{tried}\n\nWHY THE RESULTS FELL SHORT: {reason}\n\nWrite one new search query that is more likely to retrieve the passage answering the question. Use the specific technical terms, method names and quantities the answer would contain. Do not repeat a query already tried."
+    },
+    "cite": {
+      "prompt_version": "cite-v2",
+      "system_prompt": "You answer questions about research papers using ONLY the context passages you are given, labelled [P1], [P2], ... Do not use outside knowledge. Answer directly and concisely, in at most a few sentences. End every sentence with the label of the passage that supports it in square brackets, for example [P2], or [P1][P3] when it combines two passages. Cite only passages that state what the sentence says. Numbers in square brackets inside the passages, such as [21], are the papers' own references: never copy them. If the passages do not contain the information needed to answer the question, reply with exactly {sentinel} and nothing else.",
+      "check_prompt_version": "check-v2",
+      "check_max_tokens": 150,
+      "check_parse_retries": 1,
+      "check_system_prompt": "You verify citations in answers about research papers. Respond only with JSON containing \"reason\" (one sentence) and \"verdict\".",
+      "check_prompt": "Decide whether the PASSAGES, taken together, support the CLAIM, a sentence from an answer to the QUESTION.\n- \"supported\": every part of what the claim states is said in the passages or follows directly from them. Paraphrase and summary are fine.\n- \"unsupported\": some part of the claim is not said in the passages, or contradicts them.\nJudge only these passages and this claim; do not use outside knowledge.\n\nQUESTION: {question}\n\nCLAIM: {claim}\n\nPASSAGES:\n{passages}"
+    },
+    "api": {
+      "max_question_chars": 1000
+    },
+    "ci": {
+      "split": "dev_sample",
+      "results": "ci_retrieval_dev_sample",
+      "baseline": "m8_ci_baseline",
+      "metrics": [
+        "recall@5",
+        "mrr"
+      ],
+      "max_drop": 0.005,
+      "watch": [
+        "halo",
+        "config",
+        "splits",
+        "eval/metrics",
+        "eval/runners",
+        "eval/results.py",
+        "pyproject.toml",
+        "uv.lock"
+      ]
+    }
+  },
+  "kind": "enrich_pilot",
+  "n_chunks": 50,
+  "sample": [
+    {
+      "paper_id": "2401.01872v2",
+      "chunk_idx": 40,
+      "text": "MULTIPLE IMPUTATION OF HIERARCHICAL NONLINEAR TIME SERIES DATA 15"
+    },
+    {
+      "paper_id": "2401.06740v2",
+      "chunk_idx": 2,
+      "text": "A central problem in Mathematical Finance is the fast and accurate computation of arbitrage-free prices of financial derivatives, especially for advanced stochastic models and for multi-asset derivatives. A basket option is a contractual agreement between two parties, the buyer and the seller, to buy or sell a derivative whose value fluctuates over time based on the prices of a set of underlying assets (the “basket”). In this work, we consider the problem of pricing European basket call options over d underlying assets using weights {αi}d i=1. The strike price, denoted by K, is the price at which the basket can be bought at the maturity of the option contract, i.e. at t = T. The payoff of a European basket call option is provided by �d � i=1 αiSi T −K �+ , where αi > 0 and �d i=1 αi = 1. The value Si of each asset is associated to the variable xi = Si T /K, referred to in the literature as the moneyness of the stock. The payoff function of a basket call option is then provided by Payoff(x) = u0(x) := �d � i=1 αixi −1 �+ . (1.1) Models for asset prices that incorporate random jumps are essential in capturing the real-world behavior of financial markets. These models acknowledge that financial asset prices do not always move smoothly; instead, they may present abrupt changes due to unexpected events. Incorporating random jumps into asset price models helps to obtain a better description of the real-world behavior of the markets. Indeed, they allow to capture the fat-tails and skews present in asset log-returns under the “real-world” measure, while they exhibit a volatility smile or skew under the “risk-neutral” measure. We refer the reader to Cont and Tankov [8], Eberlein and Kallsen [12] or Schoutens [30] for"
+    },
+    {
+      "paper_id": "2401.07152v3",
+      "chunk_idx": 37,
+      "text": "4.2 LTO Sensitivity Analyses It is worth revisiting the classic case studies of the synthetic control method in [AG03, ADH10, ADH15] using the LTO and placebo inference procedures. For each use of the LTO p-value, we an- alyze the sensitivity of the conclusion to the equal weights assumption. For all sensitivity analyses, we use Gurobi 10.0 [Gur23] to solve the nonconvex quadratic optimization problem for optimizing pw−LTO(π). A similar sensitivity analysis for the exact and approximate placebo test may be done using the results of [FP18], which we do not replicate here. 17 0.00 0.25 0.50 0.75 −3 −2 −1 0 Effect Sizes (standard deviations) Power Method Rand. Placebo Appr. Placebo Naive LTO Powered LTO German Reunification: RMSPE, N = 14, alpha = 0.05 0.00 0.25 0.50 0.75 −3 −2 −1 0 Effect Sizes (standard deviations) Power Method Exact Placebo Rand. Placebo Appr. Placebo Naive LTO Powered LTO German Reunification: RMSPE, N = 14, alpha = 0.1 Figure 6: Power of placebo test and LTO procedure versus effect size, on size 14 subsamples of the German Reunification dataset. The other details are same as Figure 1. (Left) α = 0.05, which falls in the α < 1/N regime. The exact placebo is omitted because the power is zero in all cases. (Right) α = 0.1, which falls in the α > 1/N regime. Table 1: The table shows a summary of LTO and placebo tests and standard placebo tests applied to the case studies in [AG03, ADH10, ADH15]. The row entitled ΓLTO shows the Γ at which the sensitivity analysis for the naive LTO p-value overturns the significance. The value for Basque Country is blank, as the p-value was not significant at level α = 0.05. Proposition 99 Basque Country German Reunification N 39 17 17 papp-placebo 0 0.35 0"
+    },
+    {
+      "paper_id": "2401.07152v3",
+      "chunk_idx": 66,
+      "text": "papers. Some papers conduct multiple analyses using different outcome variables, for which the size of the donor pool or time periods change. In these cases, we provide a rough upper bound on the figures. * denotes studies with a staggered adoption framework: the studies comprise multiple applications of the synthetic control method with a single treated unit. As a result, the number of units in the donor pool and the number of pre- and post-treatment periods change per analysis. For example, [BN13] study the impact of economic liberalization episodes on GDP per capita across a dataset of all countries. The synthetic control analysis done for Singapore used 42 placebos, while Indonesia had 8 placebos. 32 Paper Units Treatment Outcome [BSG23] US States TX 2021 Abortion Ban Number of Births [CS18] US States + D.C. RI decriminalizing prostitution Sexual crimes & health out- comes [DSS17] German Districts German-Czech Labor Market Shock Employment measures [KLS13] European Coun- try Bosman Ruling (Tax Policy for Ath- letes) Athlete emigration [Pin15] Italian Region Organized Crime Rise Various economic indicators [TYMJ24] MI School Dis- trict Flint, Michigan Water Crisis Educational achievement [Han20] US State Nebraska’s 1937 Legislative Struc- ture Change Government expenditure [CN12] County Hawaii’s 1992 Hurricane Iniki Economic development [FHR13] Car companies Government support for Chrysler Car sales [CGMS17] Province Tourism policy in Salta, Argentina Employment [PY19] City Miami 1980 Mariel Boatlift Labor market [dIN15] Japanese Prefec- ture 1995 Kobe Earthquake Economic conditions [BW12] City Economic liberalization in Mumbai Skilled wages [GM16b] Country Chavez Regime in Venezuela Economic conditions [CGS17] Country Brazil FX intervention Exchange rates [CEL20] City Wuhan COVID 19 lockdown Air pollutant concentration [Roe17] German State Govt. merger in Saxony Govt. spending [SHK+15] Municipality Local enforcement initiatives in Paragominas, Brazil Deforestation [BLR14] US State 2007 Legal Arizona Workers Act Unauthorized immigrant pop. [Cha23]"
+    },
+    {
+      "paper_id": "2402.09721v6",
+      "chunk_idx": 7,
+      "text": "utility achievable by the principal against a no- swap-regret learning agent: [U ∗−Θ( � SReg(T) T ), U ∗+ O(SReg(T) T )]. As T →∞, the range converges to U ∗, which means that the agent’s no-swap-regret learning behavior is essentially equivalent to best responding behavior. This justifies the classical economic notion that the equilibria of games are results of repeated interactions between learning players. However, for no-regret but not necessarily no-swap-regret algorithms, the upper bound result U ∗+O(Reg(T) T ) does not hold. The repeated interaction between a principal and a no-regret learning agent does not always lead to the Stackelberg equilibrium outcome U ∗: Result 4 (Theorem 3.5). There exists a Bayesian persuasion instance where, against a no-regret but not no-swap-regret learning agent (in particular, mean-based learning agent), the principal can do significantly better than the Stackelberg value U ∗. In summary, our Results 1, 2, 3 exactly characterize the principal’s optimal utility in principal- agent problems with a no-swap-regret agent, which not only refines previous works on playing against learning agents in specific games (Stackelberg games and contract design) but also gen- eralizes to all principal-agent problems where the agent does not have private information. In particular, when applied to Bayesian persuasion, our results imply that the sender cannot exploit a no-swap-regret learning receiver even if the sender possesses informational advantage over the receiver. Some intuitions. As we alluded above, the main intuition behind our first three results is: the agent’s learning behavior is closely related to approximately best response. A no-regret learning agent makes sub-optimal decisions with the sub-optimality measured by the regret. When the sub- optimality/regret is small, the principal-agent problem with a no-regret agent (or approximately best responding agent) converges to the problem with an exactly best responding agent. This explains why the principal"
+    },
+    {
+      "paper_id": "2402.09721v6",
+      "chunk_idx": 31,
+      "text": "In particular, if for any ε > 0 the principal uses a signaling scheme πε that obtains an objective that is ε-close to OBJR(δ) = supπ minρ∈Rδ(π) U(π, ρ), then the principal obtains an expected utility of, by Lemma 3.2, 1 T E � T � t=1 u(at, ωt) � = U(πε, ρ) ≥ min ρ∈Rδ(πε) U(πε, ρ) ≥OBJR� δ = CReg(T) T � −ε in the learning model. Letting ε →0 proves the theorem. 11 We then show that the result in Theorem 3.1 is tight: there exist cases where the principal cannot do better than OBJR�CReg(T) 2T ) even using adaptive strategies: Theorem 3.3. For any adaptive strategy of the principal, there exists a contextual no-regret learn- ing algorithm for the agent under which the principal’s average utility is no more than OBJR�CReg(T) 2T ). There also exists a contextual no-swap-regret learning algorithm for the agent under which the prin- cipal’s average utility is no more than OBJR�CSReg(T) 2T ). See Appendix B.2 for the proof of this Theorem."
+    },
+    {
+      "paper_id": "2403.06613v3",
+      "chunk_idx": 41,
+      "text": "5.2. Increasing convex stochastic order. For ξ ∈M1, we define the integrated quantile function Qξ : (0, 1) →R by Qξ(u) := �1 u qξ(v) dv. The function u �→Qξ(u) is concave, with Qξ(0+) = E[ξ] and Qξ(1−) = 0. Conversely, every concave function Q: (0, 1) →R with Q(0+) ∈R and Q(1−) = 0 is of the form Q = Qξ for some random variable ξ ∈M1, see Lemma B.4. The increasing convex order on M1 is defined by ξ ≼icx η if and only if Qξ(u) ≤Qη(u) for all u ∈(0, 1). The ordered space (M1, ≼icx) is a complete lattice, see [14, 22]. In particular, every sequence (ξn)n∈N ⊂M1 which is bounded from above has a supremum ξ∗= ∨n∈Nξn which is determined by Qξ∗(u) = conc(Qξ1, Qξ2, · · · )(u) for all u ∈(0, 1). Here, conc(Qξ1, Qξ2, · · · ) denotes the concave hull of the sequence (Qξn)n∈N, i.e., the smallest concave function Q∗: (0, 1) →[−∞, ∞] with supn∈N Qξn(u) ≤Q∗(u) for all u ∈(0, 1).22 Let Φicx := {φu : u ∈(0, 1)} be the family of functions φu : M1 →R given by φu(ξ) := Qξ(u). We identify Φicx with (0, 1), and endow (0, 1) with the Euclidean topology. For every ξ ∈M1, the function u �→φu(ξ) is continuous. Hence, the partially ordered space (M1, ≼icx) satisfies the assumptions of Section 4. Lemma 5.5. Every concave function γ : (0, 1) →[−∞, ∞) is countably stable. Proof. Let (ξn)n∈N ⊂M1 with ∨n∈NQξn(u) ≤γ(u) for all u ∈(0, 1). Since γ is concave, it holds Q∗(u) := conc(Qξ1, Qξ2, · · · )(u) ≤γ(u) for all u ∈(0, 1). Since u �→Q∗(u) is real-valued, we obtain Qξ∗= Q∗, where ξ∗= ∨n∈Nξn ∈M1, and Qξ∗(u) = Q∗(u) ≤γ(u) for all u ∈(0,"
+    },
+    {
+      "paper_id": "2403.08753v2",
+      "chunk_idx": 15,
+      "text": "   � �� � Wt =    Π 0r×np    � �� � Γ Xt +    ut zt    � �� � ηt (8)    ut zt    � �� � ηt =    H Rz Ωtr    � �� � G    εt ζt    � �� � ξt =    H•1 H•2 Φ Υ Ωtr           ε1,t ε2,t ζt        (9) where Rz contains the relevance parameters and possibly the contamination parameters (when Υ̸ = 0r×(n−k)), and ξt stacks the structural shocks εt and the normalized measurement errors ζt, such that E(ξtξ′ t) = In+r; see, e.g., Angelini and Fanelli (2019), Arias et al. (2021) and Giacomini et al. (2022) for similar representations.4 The top-right empty block within 4In equation (7), it is assumed that the proxies zt are expressed in their innovations form, meaning they are generated by a serially uncorrelated process. However, this condition can be relaxed. We can consider a vector of r raw proxies Zt which can be decomposed as Zt = Proj(Zt | It−1) + zt, where Proj(Zt | It−1) represents the linear projection of Zt onto the information set at time t −1, and zt captures the unsystematic component of Zt, i.e., the portion of Zt that remains after filtering out the dynamics induced by past information. In such cases, the representation in system (8) can be adjusted by substituting zt with Zt in Wt, stacking the lags of Zt in Xt, and appropriately redefining the matrix Γ. This straightforward modification allows for the use of raw proxies, which may exhibit serial"
+    },
+    {
+      "paper_id": "2404.03773v2",
+      "chunk_idx": 7,
+      "text": "If the angle between the boat’s heading and the direction of the wind (see Fig. 1) is too narrow, then the boat cannot move forward in this direction. The set of all the angles for which the boat cannot advance is called the no go zone. When the wind enters the sails from the right (resp. left) side of the yacht, the yacht is sailing on starboard tack (resp. port tack). A boat sailing upwind can switch from starboard to port tack, or vice versa, by tacking. During a tacking, the yacht enters the no-go zone and hence for a few seconds, it is no longer propelled by the wind. The yacht slows down and it is its inertia that allows it to turn to the other tack. Similarly, if the boat is sailing downwind, then the switch from one tack to the other is called a jibe. For a given wind speed, the velocity of the yacht is a function of the angle between the wind direction and the yacht’s heading. This function is illustrated by polar diagrams, see Fig. 2. When we want to get closer to a particular point, say a buoy, then unless this point lies in the no-go zone with respect to the yacht, we can simply head directly towards it and this determines the tack on which to sail. However, if the position of the buoy with respect to the yacht is in the no go zone, then the yacht has to follow a zigzag trajectory (see Fig. 3). This is called beating upwind: the yacht alternates between routes on starboard and on port tack while trying to sail with the optimal upwind angle, which is the angle in the polar diagram that maximizes the projection of the velocity vector onto the vertical axis"
+    },
+    {
+      "paper_id": "2404.07128v3",
+      "chunk_idx": 16,
+      "text": "estimate is then defined by fn(x) = f( ˆw,ϑ(tn))(x) (6) 8 where ˆw = 1 tn · tn−1 � t=0 w(t). (7) Our main result in this general setting is the following bound on the logistic risk of the above estimate. Theorem 1 Let (X, Y ), (X1, Y1), . . . , (Xn, Yn) be independent and identically distributed random variables with values in [0, 1]d1×d2 ×{−1, 1}. Let Nn, In, tn ∈N and let Cn, Dn ≥ 0. Set βn = c3 · log n, αn = 1 Nn , λn = 1 tn , Kn = Nn · In and define the estimate fn as above. Assume that there exists ˜ϑ ∈Θ0, such that f˜ϑ(X) = 0, let Θ∗⊂Θ0 and set ¯Θ = � ϑ ∈Θ : inf ˜ϑ∈Θ0 ∥ϑ −˜ϑ∥≤1 � . Assume ∥fϑ −f¯ϑ∥∞,supp(X) ≤Cn · ∥ϑ −¯ϑ∥∞ for all ϑ, ¯ϑ ∈¯Θ, (8) κn = P � ϑ(0) 1 ∈Θ∗� > 0, (9) Nn · (1 −κn)In ≤1 n (10) and ∥∇wϕ(y · f(w,ϑ))∥≤Dn (11) for all x ∈[0, 1]d1×d2, y ∈{−1, 1}, w ∈A, ϑ ∈¯Θ, t ∈{0, . . . , tn −1}. Then we have E {ϕ(Y · fn(X))} − min f:[0,1]d1×d2→¯R E {ϕ(Y · f(X))} ≤c4 · � log n n + βn · sup x1,...,xn∈[0,1]d1×d2 E ������sup ϑ∈¯Θ 1 n n � i=1 ǫi · Tβnfϑ(xi) ����� � + Cn + 1 √Nn + D2 n tn + n · � 6 · Kn · β2 n + 4 · (βn + 1) · Cn · sup(w,ϑ)∈W,y∈{−1,1},x∈[0,1]d1×d2 ∥∇ϑϕ(y · f(w,ϑ)(x))∥∞ � tn + sup ϑ∈Θ∗E {ϕ(Y · Tβnfϑ(X))} − min f:[0,1]d1×d2→¯R E {ϕ(Y · f(X))} � , where ǫ1, . . . , ǫn are independent and uniformly distributed on {−1, 1} (so-called Rademacher random variables). 9 Remark 1."
+    },
+    {
+      "paper_id": "2404.17736v3",
+      "chunk_idx": 42,
+      "text": "Asilomar Conference on Signals, Systems & Computers, 2003, vol. 2. Ieee, 2003, pp. 1398–1402. [49] R. Zhang, P. Isola, A. A. Efros, E. Shechtman, and O. Wang, “The unreasonable effectiveness of deep features as a perceptual metric,” in Proceedings of the IEEE conference on computer vision and pattern recognition, 2018, pp. 586–595. [50] M. Heusel, H. Ramsauer, T. Unterthiner, B. Nessler, and S. Hochreiter, “Gans trained by a two time-scale update rule converge to a local nash equilibrium,” Advances in neural information processing systems, vol. 30, 2017. [51] Z. Chen, Y. Duan, W. Wang, J. He, T. Lu, J. Dai, and Y. Qiao, “Vision transformer adapter for dense predictions,” arXiv preprint arXiv:2205.08534, 2022."
+    },
+    {
+      "paper_id": "2404.17763v2",
+      "chunk_idx": 23,
+      "text": "4.2 Penalized MLE and Bayesian inference in high dimensions The more practically useful and statistically challenging situation arises when p is moderate to high-dimensional. We consider the problem of structure learning under the assumption of a sparse underlying graph G. This problem was considered by Meinshausen and B¨uhlmann (2006) within the context of Gaussian graphical models, Ravikumar et al. (2010) addressed Ising models, and Yang et al. (2012) for general PEGMs. All these approaches are based on the idea of neighborhood selection, wherein neighbors of each node are estimated sepa- rately. Essentially, these procedures rely on the pseudo-likelihood �p j=1 pθ(Xj | X−j) with a suitable penalty. To our knowledge, joint structure learning for general PEGMs has not been considered before. Let ∥M∥1 = � j � k |Mjk| denote the ℓ1-norm of the matrix M. We propose the following ℓ1-penalized estimator for θ: ˆθλ = arg min θ∈Θ −ℓ(θ) + λ ∥θ∥1 = arg min θ∈Θ Q(θ). (7) For computing the estimator, a proximal optimization algorithm (Parikh and Boyd, 2014) can be used with minor modifications from the updates in (6). Indeed, the objective function is equivalent to Q(θ) + 1θ∈Θ. Since both the ℓ1-penalty and the parameter space Θ are convex, proximal maps of the sum of the two functions amount to the composition 15 of the proximal maps of the functions (Yu, 2013). This leads to batch updates of the form: θ(t+1) = PΘ [proxℓ1(θ(t) + γ∇θℓ(θ(t)))], (8) where proxℓ1(x) is the well-known soft-thresholding operator applied to each element of x (Parikh and Boyd, 2014). The tuning parameter λ is selected via cross-validation wherein the out-of-sample log-likelihood is maximized. This usually results in better Frobenius norms but poor structure learning. When structure learning is the main focus, we estimate the underlying graph by averaging estimates ˆGλ obtained"
+    },
+    {
+      "paper_id": "2404.19707v3",
+      "chunk_idx": 44,
+      "text": "(Regime 2) of the fitted two-regime second- order structural LSTVAR model. The shaded areas indicate the U.S. recessions defined by the NBER. is obtained as a special case of the skewed t-distribution, with νi = ∞and λi = 0, the validity of the identifying Assumption 1 can be assessed based on the estimates of these parameters. To avoid overfitting, particularly in the regime prevailing when the level of EPU is high, the autoregressive order p = 2 is selected based on Hannan-Quinn information criterion. To deal with the problem of weak identification with respect to the ordering and signs of the columns of B2, discussed in Section 3.3, 3.4, and 3.5, we implement the following, simplistic blended identification strategy that avoids making restrictive assumptions about the effects of the CPU shock. We normalize the first row of B1 positive with CPUI ordered first and assume that in both regimes, one of the shocks, deemed as the CPU shock, has greater impact effect on the CPUI than any other shock, and this impact effect has the same sign in both regimes. Then, to support our identification, we check that the recovered CPU shocks align with several major 24 historical events affecting CPU. In particular, we find that President Trump’s election is preceded by large CPU shocks in October 2016 and 2024 (17 and 26, respectively). The largest negative recovered CPU shock (−10), in turn, dates to August 2022, when the Inflation Reduction Act was passed, providing support for the clean energy transition. Among all the shocks recovered from the model, only the one deemed as the CPU shock has signs consistent with the above historical events affecting CPU. The location parameter estimate is ˆc = 14.48, implying roughly that Regime 1 dominates when the level of EPU is not high, while"
+    },
+    {
+      "paper_id": "2404.19707v3",
+      "chunk_idx": 48,
+      "text": "described in Lanne and Virolainen (2025, Appendix B). The distribution of the GIRFs in each regime is illustrate in a so-called ”shotgun plot” in Figure 2, which depicts each GIRFs using a level of opacity such that the darkness of a region displays the concentration of GIRFs in it (cf. Lanne and Virolainen, 2025). The response of CPUI to a positive CPU shock follows a similar pattern in both regimes in the vast majority of the GIRFs, while EPUI temporarily increases in Low EPU Regime and decreases in High EPU Regime. A possible explanation for the decrease in the EPUI could be that under already heightened EPU, an unexpected increase in CPU may induce a shift in focus from broader economic policy issues to climate policy. 27 Consistent with the previous literature (Fried et al., 2022, Khalil and Strobel, 2023, and Huang and Punzi, 2024), a positive CPU shock decreases production in both regimes. Huang and Punzi (2024) attribute the decrease in production to firms postponing investments, whereas Fried et al. (2022) and Khalil and Strobel (2023) consider mechanisms that shift investments toward cleaner capital. Although many of the GIRFs exhibit a short-term increase of IPI in High EPU Regime, the negative long-term response of IPI seems, on average, roughly similar in both of the regimes. In both regimes, a positive CPU shock increases consumer prices, aligning with Huang and Punzi (2024) and Khalil and Strobel (2023). Huang and Punzi (2024) found that a positive CPU shock in- creases inflation by acting as a positive supply shock, whereas according Khalil and Strobel (2023), a positive CPU shock may decrease aggregate demand due to risk-averse households raising sav- ings, while firms raise their prices pre-emptively to lower the probability of being stuck with a negative markup. However, we find that the"
+    },
+    {
+      "paper_id": "2405.07102v3",
+      "chunk_idx": 62,
+      "text": "Treatment received: Treatment received D is determined by Z and S. 33"
+    },
+    {
+      "paper_id": "2405.07102v3",
+      "chunk_idx": 114,
+      "text": "S2.10 Proof of Theorem 6 Suppose that 1. There exists 0 < ϵ < 0.5 such that ϵ < P0(Z|X) < 1 −ϵ, ϵ < P0(D|Z, X) < 1 −ϵ, ϵ < ηa,P0 < 1 −ϵ, ϵ < ηa,P0 −ηb,P0 < 1 −ϵ, ϵ < �Pn,k(Z|X) < 1 −ϵ, ϵ < �Pn,k(D|Z, X) < 1 −ϵ, ϵ < ηa, �Pn,k < 1 −ϵ, ϵ < ηa, �Pn,k −ηb, �Pn,k < 1 −ϵ, (k = 1, ...K), there is a universal constant C such that |EP0[Y |Z, X]| ≤C with probability one. 2. ∥X∥∞< C,λmin( 1 n �n i=1 XT i Xi) > 0 with probability one. λminE[XT i Xi] > 0. Here for any matrix H, λminH denoted the smallest eigenvalue of H. 3. Rate conditions for nuisance functions estimation: The convergence rates for all nuisance function estimators are faster then n−1/4: ���πP0(z, ·) −π �Pn,k(z, ·) ��� L2(P0) = op(n−1/4) ���µY,P0(z, ·) −µY, �Pn,k(z, ·) ��� L2(P0) = op(n−1/4) ���µD,P0(z, ·) −µD, �Pn,k(z, ·) ��� L2(P0) = op(n−1/4) for z ∈{0a, 1a, 0b, 1b}, k ∈{1, ..., K}. Proof. The proof is very similar to the proof of Theorem 4. We will only state the proof for test 24 T (1) Wald,α. Since one-step estimator and estimating equation estimator are equivalent when our tests are based on best linear projection, we state the proof for one-step estimator. We define R(P, P) = β(1) P −β(1) P + Pϕ(1) P . Similar to the proof of Theorem 4, we define the following notations: πz(x) = P(Z = z|X = x), πz(x) = P(Z = z|X = x), µY,z = EP [Y |Z = z, X = x], µY,z = EP [Y |Z = z, X = x], µD,z = EP [D|Z = z, X = x], µD,z = EP [D|Z"
+    },
+    {
+      "paper_id": "2405.15779v2",
+      "chunk_idx": 13,
+      "text": "3.1.1 The proposed LGEMixer Block Although transformer-based models have demonstrated superior performances over CNN- based approaches in some applications, they are often associated with high computational com- plexity. On the other hand, recent research has shown that some full CNN-based architectures, 8 CLG LGE LGE EMA GCF Module RB Block x2 Project S Project T LGE CLG LGE LGE LGE Head Prediction SeRP Loss Marginal Weight Loss + Dice loss Total Loss Input GT Main Feature Extractor Target Feature Extractor CLG LGE LGE GCF Module RB Block x2 LGE Head Prediction Main Feature Extractor (a) (b) + RB block Head Prediction (e) CLG block Layer Norm GELU Conv2D CLG Block CLG Block Layer Norm GELU Up Sample 1x1 Conv2D (c) (d) Training Phase Inference Phase Conv2D Figure 2: General architecture of the proposed LiteNeXt model. (a) Overview of the training pipeline, (b) Overview of the inference phase, (c) Architecture of the CLG block, (d) Architecture of the Residual Block-abbreviated as RB block, (e) Architecture of the Head Prediction. with low computational costs, like ConvMixer [27],and ConvNeXt [29] also give outstanding per- formances. Nevertheless, the ConvMixer and ConvNeXt blocks, as demonstrated in Fig. 1 , only use a uniform kernel size such as 7×7 or 9×9, which may lack diversity in extracting spatial in- formation in medical images. In this study, we propose a lightweight feature extractor consisting of LGEMixer blocks inspired by ConvMixer and ConvNeXt blocks but with some improvements to bring higher accuracy to the segmentation task. The overall architecture of the LGEMixer block includes two submodules: LocalMixer block and FarMixer block. As shown in Fig.3a, the input feature map is passed through the LocalMixer 9 3x3 Conv2D (a) (b) (c) Layer Norm GELU LocalMixer 7x7 DWConv2D Layer Norm GELU + FarMixer Local Mixer Far Mixer 1x1 Conv2D GELU"
+    },
+    {
+      "paper_id": "2405.15779v2",
+      "chunk_idx": 62,
+      "text": "[1] Ronneberger Olaf, Fischer Philipp, Brox Thomas, \"U-Net: Convolutional Networks for Biomedical Image Segmentation,\" Medical Image Computing and Computer-Assisted Inter- vention, 2015, pp. 234–241. [2] J. Long, E. Shelhamer, and T. Darrell, \"Fully convolutional networks for semantic segmenta- tion,\" in 2015 IEEE Conference on Computer Vision and Pattern Recognition (CVPR), 2015, pp. 3431-3440. [3] Haoliang Sun, Xiankai Lu, Haochen Wang,Yilong Yin, Xiantong Zhen, Cees G.M. Snoek, Ling Shao, \"Attentional prototype inference for few-shot segmentation,\" Pattern Recognition, 2023, vol. 142, pp. 109726. [4] Dong Hao, Yang Guang, Liu Fangde, Mo Yuanhan and Guo Yike, \"Automatic Brain Tumor Detection and Segmentation Using U-Net Based Fully Convolutional Networks,\" Medical Image Understanding and Analysis, 2017, pp. 506–517. [5] Cui Shaoguo, Mao Lei, Jiang Jingfeng,Liu Chang and Xiong Shuyu, \"Automatic Semantic Segmentation of Brain Gliomas from MRI Images Using a Deep Cascaded Neural Network,\" Journal of Healthcare Engineering, 2018, vol. 2018, pp. 1-14. [6] Isensee Fabian, Kickingereder Philipp, Wick Wolfgang, Bendszus Martin, Maier-Hein Klaus H., \"Brain Tumor Segmentation and Radiomics Survival Prediction: Contribution to the BRATS 2017 Challenge,\" Brainlesion: Glioma, Multiple Sclerosis, Stroke and Traumatic Brain Injuries, 2018, pp. 287–297. [7] Cheng Tang, Xinyi Zeng, Luping Zhou, Qizheng Zhou, Peng Wang, Xi Wu, Hongping Ren, Jiliu Zhou and Yan Wang, \"Semi-supervised medical image segmentation via hard positives oriented contrastive learning,\" Pattern Recognition, 2024, vol. 146, pp. 110020. 38 [8] Hongyang Zhang, Wenxue Zhang, Weihao Shen, Nana Li, Yunjie Chen, Shuo Li, Bo Chen, Shijie Guo and Yuanquan Wang, \"Automatic segmentation of the cardiac MR images based on nested fully convolutional dense network with dilated convolution,\" Biomedical Signal Process- ing and Control, 2021, vol. 68, pp. 102684. [9] Bernard Olivier, Lalande Alain, Zotti Clement, Cervenansky Frederick and Yang et al., \"Deep Learning Techniques for Automatic MRI Cardiac Multi-Structures Segmentation and Diagnosis: Is the Problem Solved?,\" IEEE"
+    },
+    {
+      "paper_id": "2405.17070v2",
+      "chunk_idx": 91,
+      "text": "(a) December 15th in 2015, 2016 and 2017 to January 15th in 2016, 2017 and 2018. 2015 2016 2017 Mar 20 Mar 22 Mar 24 Mar 26 Mar 28 Mar 30 Apr 01 Apr 03 Apr 05 Apr 07 Apr 09 Apr 11 Apr 13 Apr 15 Apr 17 Apr 19 Apr 21 Apr 23 Apr 25 Apr 27 Apr 29 May 01 May 03 May 05 40 50 60 70 40 50 60 40 50 60 Load [GW] (b) March 1st to May 10th in 2016, 2017 and 2018."
+    },
+    {
+      "paper_id": "2406.06941v3",
+      "chunk_idx": 137,
+      "text": "is uniformly upper bounded in absolute value by Cδ−2 for all k = 1, . . . , K. With max � |ζ(x; η∗)|, ���ζ � x; ˆη(−k)���� � ⩽C for all k, we conclude that max � ∥h∗ 1∥∞,P ∗, ���ˆh(−k) 1 ��� ∞,P ∗ � ⩽ C2δ−2."
+    },
+    {
+      "paper_id": "2406.07066v2",
+      "chunk_idx": 64,
+      "text": "for j = 3,4 so that the two events in the final expression of A are independent, and Item (ii) follows. Proof of (iii). Let ˆγ1, ˜γ2 ∈{0,1,...,N,∞}Z, and let ˆℓ1 ∈{0,5}Z and ˜ℓ2 ∈{0,2}Z be two fixed layer processes that are compatible with the event {ˆIz1 = ˆγ1} ∩{˜Iz2 = ˜γ2}. By com- patible, we mean for example that supposing that ˆγ1 and ˜γ2 meet at some time s ≤t1 ∨t2, it is not possible to have ˆl1 u = ˜l2 u for u ≤s. Then, analogously to the proof of point (ii) above, the sets {(ˆγ1 s, ˆℓ1 s,s),s ∈Z, ˆγ1 s /∈{0,∞}} and {(˜γ2 s, ˜ℓ2 s,s),s ∈Z, ˜γ2 s /∈{0,∞}} are disjoint sets implying the independence. PROPOSITION B.6. For all i, ˜Izi has the same distribution as Izi and (ˆIz1, ˆIz2) has the same distribution as (Iz1,Iz2). PROOF. Remind that the layers J(0),...,J(5) are i.i.d. so that it is easy to prove that ˜Izi is a backward random walk with the same transitions as Izi (compare Equation (40) with Equation (28)) which in turn implies that they share the same distribution. We now turn to the second part of the proof. For the marginals, the same argument as above applies (thanks to Equation (42)). Hence, ˆIzi has the same distribution as Izi. Then, we show that the process (ˆIz1 s , ˆIz2 s )s is a two-dimensional Markov chain (backwards in time) which has the same transitions as (Iz1 s ,Iz2 s )s. Since both chains start from the same initial conditions, this implies the desired result. Since transitions between t1 ∨t2 and t1 ∧t2 only concern one of the two processes, evolv- ing according to the right marginals, we do only need to consider transitions s →s −1 for s ≤t1 ∧t2. Fix i1,i2,j1,j2 ∈{0,...,N}."
+    },
+    {
+      "paper_id": "2406.07066v2",
+      "chunk_idx": 111,
+      "text": "∥A�Lab∥2 2 � ≤KN−1, (79) (80) IE � max a,b∈{−,+} ����(rN a rN b )−1LN,ab −(bp) ��� 2 ∨ ���(rN a rN b )−1CN,ab −(ap) ��� 2�� ≤K max a,b � (rN a rN b )−1� N−2, and (81) ∥�LN,ab∥2 ≤∥LN,ab −(bprN b )1Pa∥2 and ∥�CN,ab∥2 ≤∥CN,ab −(aprN b )1Pa∥2, DEPENDENCE GRAPH DENSITY INFERENCE IN HIGH DIMENSION 57 where K is some universal constant. Moreover, for each α ≥1, there exists a constant Kα depending only on α such that, for all N ≥1 satisfying rN −∧rN + > 0, (82) IE � max a,b∈{−,+} � ∥LN,ab −(bprN b )1Pa∥α 2 ∨∥CN,ab −(aprN b )1Pa∥α 2 �� ≤Kα max a∈{−,+} �� rN a /rN b �α/2� . The proof of Lemma F.1 is postponed to Section F.4. REMARK F.2. Let a,b ∈{−,+}. Because of the relations (75) and (76), some statements of Lemma F.1 admit immediate corollaries. For instance, • CN,•b = CN,+b + CN,−b and �CN,•b = �CN,+b + �CN,−b are orthogonal sums, and in par- ticular one can deduce from Equations (81) and (82) that IE � ∥�CN,•b∥α 2 � ≤IE � ∥CN,•b −prN b (1P+ −1P−)∥α 2 � ≤2Kα max a∈{−,+} �� rN a /rN b �α/2� , • or, LN,a• = LN,a+ + LN,a−and �LN,a• = �LN,a+ + �LN,a−, and in particular one can de- duce from Equations (81) and (82) that ∥�LN,a•∥2 ≤∥LN,a+ −prN + 1Pa∥2 + ∥LN,a−+ prN −1Pa∥2, and IE � ∥LN,a• −p(rN + −rN −)1Pa∥α 2 � ≤K′ α max a∈{−,+} �� rN a /rN b �α/2� , for some K′ α which may be different from Kα. F.3. Results regarding the inverse matrix. Recall that λ > 0. Under this condition, the random matrix QN := � I −(1 −λ)AN�−1 = �∞ n=0(1 −λ)n(AN)n is well-defined and satisfies |||QN|||r ≤λ−1 for"
+    },
+    {
+      "paper_id": "2406.14184v3",
+      "chunk_idx": 30,
+      "text": "7 Integral posteriors and evidence approxi- mation In case copycat models with compact parametric spaces have been added, a simple Monte Carlo estimator of the Bayes factor for integral priors is based on the Markov chains (θt i) associated with integral priors πi(θi), i = 1, . . . , q. For example, we can estimate the Bayes factor B21(x) by �T t=1 f2(x | θt 2)/ �T t=1 f1(x | θt 1). However, it is well known that this is not the optimal strategy when the integral posterior πi(θi | x) ∝πi(θi)fi(x | θi) is concen- trated relative to the integral prior πi(θi). In such situations general methods based on the integral posterior could produce estimates of the evidence, and therefore of the Bayes factor, in a more efficient way. Besides, the simulation from the integral posterior entails some additional difficulties because the integral prior is not known analytically. To overcome this issue we resort to a completion of the integral posterior as follows. The simulation of θt+1 i given θt i is carried out in several steps. The last two steps correspond to the simulation of a training sample zt+1 i , and the 20 simulation θt+1 i from πN i (θi | zt+1 i ). Besides, since the 2-step transition density Q2 i (θi | θ′ i) does not depend on θ′ i, it follows that given any initial point θ0 i , the subsequences {θ2 i , θ4 i , θ6 i , . . . } and {θ3 i , θ5 i , θ7 i , . . . } are iid from πi(θi). Note that θt i and θt+1 i are independent if any compact space is involved along the transition θt i →θt+1 i . In general, we consider the subsequence (ˇθt i)"
+    },
+    {
+      "paper_id": "2406.19619v3",
+      "chunk_idx": 52,
+      "text": "A.3 About the Generalization Error of Basic Diffusion Model In Li et al. (2023), a random feature model is considered as the score estimator. The basic intuition is that the generalization error with respect to the KL divergence, DKL (µ ∥ˆµ) is decomposed into three terms: the training error, approximation error of underlying random feature model, and the convergence error of stationary measures. Among these three, the third one is ignorable since the fast rate of convergence of an OU process (or, from log Sobolev inequality for Gaussian random variables in van Handel (2016)). The first one is also small since random feature model in this setting is essentially linear regression with least squares. Moreover, as stated in Hsu et al. (2021), random feature model can approximate Lipschitz functions with compact supports. However, the approximation error can be large and cause curse of dimensionality if we choose m ∼n. To illustrate this, we make a more general statement including smoothness considerations. To be more precise, we introduce the following setting. We use the basic diffusion model with a forward OU process. The score function st,θ(x) is parameterized by the random feature model with m random features: st,θ(x) = 1 mAσ (Wx + Ue(t)) = 1 m m � j=1 ajσ � wT j x + uT j e(t) � , where σ is the ReLU activation function, A = (a1, . . . , am) ∈Rd×m is the trainable parameters, W = (w1, . . . , wm)T ∈Rm×d, U = (u1, . . . , um)T ∈Rm×de are initially sampled from some pre-chosen distribu- tions (related to random features) and remain frozen during the training, and e : R+ →Rde is the time embedding function. The precise description is given below. Assume that aj, wj, and uj are drawn"
+    },
+    {
+      "paper_id": "2406.19619v3",
+      "chunk_idx": 101,
+      "text": "G.2.2 Checkpoint Merging Model For comparison, we also generated samples from a diffusion model that results from equally merging LoRA checkpoints of the two auxiliary models. Note that because the base SDXL model is the same for both models, merging the LoRA checkpoints and appending the merged checkpoint to the base model is the same as merging the entirety of the two auxiliary model checkpoints. As stated in the main text, checkpoint merging is a common model adaptation method in the online stable diffusion community. Figure 9 shows the checkpoint merging UI of the popular image generation tool stable-diffusion-webui (Automatic1111, 2022). The inference-time hyperparameter setting is the same as the one stated in Section G.2.1."
+    },
+    {
+      "paper_id": "2407.00037v2",
+      "chunk_idx": 2,
+      "text": "for generous discussions, as well as Michal Kowalik, Shengwu Li, Matthew Rabin, Madison Shirazi, and Charlie Yang for helpful comments. 1 assumed to have full support. This paper additionally supposes that agents can receive a full-support signal regarding the preferences of other agents. The model, which is explained in section 2, considers how the implementability of a social choice function (SCF) changes as the information structure varies. The question is whether and when there exist SCFs that are not implementable when agents have no information about the types of other agents but are implementable when one or more agents receive additional information about other agents. This question can be asked with respect to either partial or full implementation. Par- tial implementation requires only that the planner’s desired outcome is achieved by some equilibrium of the game, while full implementation demands that every equilibrium of the game yields a desirable outcome. It is well-known that the partial implementability of an SCF depends only on whether it satisfies incentive compatibility, which requires that it is a best response for an agent to behave truthfully if all other agents are behaving truthfully. In section 3, we show that any SCF which satisfies incentive compatibility when agents receive informative signals about the types of other agents also satisfies incentive compatibility when agents do not have this additional information. This implies that a planner concerned only with partial implementation will never prefer an agent to have additional information about other agents. The reason is when an agent has access to an informative signal about the preferences of other agents, the planner must ensure that the agent is incentivized to report truthfully in each signal realization. However, a weighted average of these constraints across signal realizations yields the incentive constraint needed for the agent if she"
+    },
+    {
+      "paper_id": "2407.07009v2",
+      "chunk_idx": 27,
+      "text": "This section illustrates the performance evaluation of the proposed XAI-CHEST framework, where BER performance of STA-FNN channel estimation scheme is analyzed taking into consideration full, relevant, and irrelevant subcarriers. First of all, we start with the noise weight threshold fine-tuning, where the simulation-based solution of (17) is provided. After that, the performance evaluation is performed according to several 8 (a) Noise weight distribution 0 5 10 15 20 25 30 35 40 10-5 10-4 10-3 10-2 10-1 100 Perfect Channel STA Full R = 4, Th = 0.1 R = 7, Th = 0.2 R = 12, Th = 0.3 R = 28, Th = 0.4 R = 40, Th = 0.5 R = 45, Th = 0.6 R = 47, Th = 0.7 R = 50, Th = 0.8 IR = 48, Th = 0.1 IR = 45, Th = 0.2 IR = 40, Th = 0.3 IR = 24, Th = 0.4 IR = 12, Th = 0.5 IR = 7, Th = 0.6 IR = 5, Th = 0.7 IR = 2, Th = 0.8 (b) LFS channel model - QPSK modulation 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9 10-5 10-4 10-3 10-2 10-1 Relevant Irrelevant Full (c) BER performance vs. noise threshold Figure 5. Fine-tuning of the noise threshold γ considering the HFS channel model and QPSK modulation. Table II PARAMETERS OF THE STUDIED STA-FNN CHANNEL ESTIMATION SCHEME. Parameter Values STA-FNN (Hidden layers; Neurons per layer) (3;15-15-15) Activation function ReLU Number of epochs 500 Training samples 800000 Testing samples 200000 Batch size 128 Optimizer ADAM Loss function MSE Learning rate 0.001 Training SNR 40 dB criteria including the (i) modulation order, (ii) frequency selec- tivity of the channel, (iii) training SNR, and (iv) conventional channel estimation accuracy. Finally, a detailed computational complexity analysis is"
+    },
+    {
+      "paper_id": "2407.11518v1",
+      "chunk_idx": 17,
+      "text": "i=1 are weights of particles generated by transport map Tk and {wi}N"
+    },
+    {
+      "paper_id": "2408.07379v2",
+      "chunk_idx": 18,
+      "text": "large compared to dist(x, S) and dist(y, S). This can be seen from the limit case: as ρ →0, the bound blows up but RS,ρ(x, y) remains well-bounded. Hence the bound is not consistent with RS,ρ(x, y). On the other hand, as ρ →∞, the bound approaches zero, consistent with RS,ρ(x, y). This indicates that the estimate is more suitable for the large bandwidth case. Numerically, as shown later in the plots in Section 3.3, the estimate helps to capture the behavior of |RS,ρ(x, y)| in case of large ρ but completely misses when ρ is small. Additionally, unlike the “small bandwidth case” discussed in Section 3.1, the distance dist(x, y) does not appear in the estimate of RS,ρ(x, y) or in the assumptions. The estimate implies that the quantity |RS,ρ(x, y)| is mainly affected by the distance of x, y to S in the large bandwidth case. Now let us demonstrate Theorem 3.7 by reconsidering the example from Section 3.1 with ρ = 0.4 (which represents the large bandwidth regime). Figure 3.4 shows the heat map of |RS,ρ(x, y)| when ρ = 0.4. First of all, we can see a clear “tensor product” structure (with 4-by-4 blocks) and different from Figure 3.2, there is no special structure near the diagonal, which indicates that dist(x, y) has little to no influence on |RS,ρ(x, y)|. The bright (yellow or green) regions in the 4-by-4 grid correspond to larger values of |RS,ρ(x, y)| and imply that: For large bandwidth ρ, |RS,ρ(x, y)| will be larger when dist(x, S)/ρ and dist(y, S)/ρ are larger. Such a geometric characterization is indeed consistent with the theoretical result in Theorem 3.7. In fact, the upper bound estimate of |RS,ρ(x, y)| in Theorem 3.7 increases with dist(x, S) and dist(y, S). This indicates that |RS,ρ(x, y)| is"
+    },
+    {
+      "paper_id": "2409.13467v3",
+      "chunk_idx": 12,
+      "text": "In graphs, node features can be computed based on their connectivity and neighborhoods within the graph. Therefore, one can compute so-called Positional Encodings. In this work, we experimented with two types of PEs: RandomWalk PEs and Laplacian PEs. k-dimensional RandomWalk PEs are computed from a k-step random walk through the graph, starting from each node. After each step i, the number of walkers in a node is extracted as the i-th feature for the positional encoding [36]. k-dimensional Laplacian PEs are defined as the first k dimensions of the eigenvectors of the graph’s Laplacian with randomly assigned signs [37]. 5 Evaluation"
+    },
+    {
+      "paper_id": "2410.00318v3",
+      "chunk_idx": 29,
+      "text": "Please select from the following choices: A. The Left Red Sheave; B. The Right Red Sheave; C. None of them will move; D. Both of them will move; GPT4o: B the right red sheave. If you pull the black rope in the direction of the green arrow (upwards) on the right side, it will cause the right red sheave to move downwards due to the tension in the rope the left red sheave, along with the load it is holding, will move upwards thus, only the right red sheave will move downward when pulling the rope in the indicated direction Correct Answer: A D In the pulley system, if we pull the black rope in the green arrow upwards direction, in which direction the red sheave will go? Please select from the following choices: A. Going Rightward; B. Going Leftward; C. Going Upward; D. Going Downward; Correct Answer: C E How many sheaves will move if we pull the rope on the right? Please select from the following choices: A. 1; B. 2; C. 3; D. None; Correct Answer: A GPT4o: B 2;in the shown pulley system, there are a total of three pulleys/sheaves, two at the top and one at the bottom attached to the load when you pull the rope on the right, the force is transferred through the system of pulleys the two upper pulleys are fixed. the bottom pulley, attached to the load, will move up or down, depending on whether the rope is pulled or released. F If we pull the blue rope on the right, how many purple sheaves will move? Please select from the following choices: Correct Answer: C GPT4o: D all will move;In the arrangement shown, all the purple sheaves (pulleys) are interconnected by the blue ropes when you pull the blue"
+    },
+    {
+      "paper_id": "2410.01999v4",
+      "chunk_idx": 101,
+      "text": "The following are multiple −choice questions (with answers) about debugging a �→programming problem."
+    },
+    {
+      "paper_id": "2410.01999v4",
+      "chunk_idx": 156,
+      "text": "The following are multiple choice questions (with answers) about programming �→problem."
+    },
+    {
+      "paper_id": "2410.04110v3",
+      "chunk_idx": 5,
+      "text": "circuit and network concepts to handle complex mi- crowave analyses. Typically, three equivalent representations can be used to analyze microwave networks: impedance, admittance, and scattering parameters [24]. An impedance matrix (Z-parameters) model of MC was first adopted in [17]. Subsequently, equivalent models based on the scattering matrix (S-parameters) have been developed [25]. These models are essentially equivalent and have been unified in, e.g., [24], [26], [27]. From a practical perspective, the scattering matrix model has the advantage of being more directly related to the radiation pattern [28] and verifiable by measurements, as demonstrated in our previous MC measurement work [29]. 3) Channel Estimation: Considering the sparse channel nature in the mmWave [2] and THz [3], [4] bands, earlier investigations in [30], based on the conventional cascaded model, demonstrated that channel estimation can be formu- lated as a sparse signal recovery problem, which can be solved using compressed sensing (CS) techniques. In [31] and [32], CS-based channel estimation in multi-user scenarios was formulated and addressed based on the conventional linear model by leveraging double-structured sparsity. Other works such as [33], [34] proposed two-stage channel estimation methods that decouple the cascaded channel into two separate subproblems. However, none of these previous studies account for MC. Moreover, prior information can be incorporated with CS tools to significantly boost the performance on many levels, such as weighted CS algorithms, structured codebook design, and dictionary design as shown in [35]–[37], which has not been investigated for RIS channel estimation problems. Few works in the literature address the RIS-assisted channel estimation problem with MC. A channel estimation bound evaluation in the presence of MC was conducted in [18]. The results indicates that the closer integration of RIS unit cells will significantly degrade the channel estimation accuracy. Therefore, MC awareness is emerging as a critical concern in"
+    },
+    {
+      "paper_id": "2410.04110v3",
+      "chunk_idx": 27,
+      "text": "Ψmc ≜(ΘT mc ⊗P) ∈CMBMI×NBNUN2 I is the measure- ment matrix, and Dmc is the basis matrix defined in (21). Remark 2: Comparing (18) and (23) reveals that accounting for MC results in a dimensional increase in both the measure- ment and basis matrices. Specifically, the dimension of Ψcv is MBMI × NBNUNI, while the dimension of Ψmc expands to MBMI ×NBNUN 2 I . Moreover, the dimension of the atoms in Dmc is NI times that of Dcv. The enhanced accuracy comes at the expense of higher complexity. Given the large number of elements in an RIS (and consequently, a large NI), such an increase in dimensionality can render CS solutions infeasible in practice. We will show in Section IV-B that applying the proposed DR strategy can effectively mitigate this complexity issue from an algorithmic perspective."
+    },
+    {
+      "paper_id": "2410.04110v3",
+      "chunk_idx": 63,
+      "text": "Zheng et al., “Mutual coupling in RIS-aided communication: Model training and experimental validation,” IEEE Trans. Wireless Commun., 2024, early access. [30] P. Wang et al., “Compressed channel estimation for intelligent reflecting surface-assisted millimeter wave systems,” IEEE Signal Process. Lett., vol. 27, pp. 905–909, 2020. [31] X. Wei, D. Shen, and L. Dai, “Channel estimation for RIS assisted wireless communications—Part II: An improved solution based on double-structured sparsity,” IEEE Commun. Lett., vol. 25, no. 5, pp. 1403–1407, 2021. [32] J. Chen et al., “Channel estimation for reconfigurable intelligent sur- face aided multi-user mmWave MIMO systems,” IEEE Trans. Wireless Commun., vol. 22, no. 10, pp. 6853–6869, 2023. [33] J. He, H. Wymeersch, and M. Juntti, “Channel estimation for RIS-aided mmwave MIMO systems via atomic norm minimization,” IEEE Trans. Wireless Commun., vol. 20, no. 9, pp. 5786–5797, 2021. [34] K. Ardah et al., “TRICE: A channel estimation framework for RIS-aided millimeter-wave MIMO systems,” IEEE Signal Process. Lett., vol. 28, pp. 513–517, 2021. [35] A. Ali, N. Gonz´alez-Prelcic, and R. W. Heath, “Millimeter wave beam- selection using out-of-band spatial information,” IEEE Trans. Wireless Commun., vol. 17, no. 2, pp. 1038–1052, 2017. [36] S. Tarboush, A. Ali, and T. Y. Al-Naffouri, “Compressive estimation of near field channels for ultra massive-MIMO wideband THz systems,” in Proc. IEEE Int. Conf. Acoustics, Speech, and Signal Process. (ICASSP), 2023, pp. 1–5. [37] ——, “Cross-field channel estimation for ultra massive-MIMO THz systems,” IEEE Trans. Wireless Commun., vol. 23, no. 8, pp. 8619– 8635, 2024. [38] M. Bayraktar et al., “RIS-aided joint channel estimation and localization at mmWave under hardware impairments: A dictionary learning-based approach,” IEEE Trans. Wireless Commun., vol. 23, no. 12, pp. 19 696– 19 712, 2024. [39] Q. Wu and R. Zhang, “Intelligent reflecting surface enhanced wireless network via joint active and passive beamforming,” IEEE Trans. Wireless Commun.,"
+    },
+    {
+      "paper_id": "2410.07222v1",
+      "chunk_idx": 66,
+      "text": "If the models are able to learn, this indicates that their complexity is large enough. We optimise the models with suitable learning 32 N Model Epoch Inner Risk Bailout Runtime 10 None - 45.00 9.00 - 10 GNN 1000 0.00 9.00 2 min 10 XPENN 1000 0.00 9.00 2 min 10 FNN(L) 1000 2.37 9.00 2 min 20 None - 190.00 19.00 - 20 GNN 1000 0.00 19.00 3 min 20 XPENN 1000 0.00 19.00 4 min 20 FNN(L) 1000 10.61 19.00 4 min 50 None - 1225.00 49.00 - 50 GNN 1000 0.00 49.00 6 min 50 XPENN 1000 0.00 49.00 14 min 50 FNN(L) 1000 58.56 49.00 30 min 100 None - 4950.00 99.00 - 100 GNN 1000 0.00 99.00 15 min 100 XPENN 1000 0.00 99.00 47 min 100 FNN(L) 1000 1532.64 99.00 146 min Table 1: Best inner risk of GNN, PENN and FNN(L) model on the stylised data set. rates5 making use of the ADAM optimiser which is a sophisticated version of stochastic gradient descent and train for 1000 epochs. It is worth pointing out that the first layer of the FNN(L) network connects N + N 2 neurons on one side to N neurons on the other side. Hence, the numbers of parameters we are training (over N 3) is massively higher than the number of data points in the training set (2N). One has to expect that achieving overfitting will not be an issue whereas the number of parameters and the time it takes to train them will grow dramatically. Meanwhile the GNNs number of parameters is independent from the graph size and instead is driven by the weight matrices of constant size (in our case 20 × 10) that map current state and neighborhood state of each node to its new node"
+    },
+    {
+      "paper_id": "2410.13015v2",
+      "chunk_idx": 45,
+      "text": ". . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 36 S5.7.2 SERCA . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 39 S5.7.3 PMCA . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 41 S6 Quasi Steady State Approximation . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 43 arXiv:2410.13015v2 [q-bio.MN] 25 Mar 2025 S1 Comparing integral of RAP1-GTP to JON/A binding assay 2 S1 Comparing integral of RAP1-GTP to JON/A binding assay"
+    },
+    {
+      "paper_id": "2410.23587v3",
+      "chunk_idx": 16,
+      "text": "MRT,H|T(z) = exp (A(H, z) + B(H, z)hT+1) , (8)"
+    },
+    {
+      "paper_id": "2410.24191v1",
+      "chunk_idx": 44,
+      "text": "must be induced by the following map T (x) =  Λα(x) ∧p∗q∗ F (x) if x ≥(Λα)−1(p∗) p∗ if x ∈[F −1(q∗),(Λα)−1(p∗)) x if x < F −1(q∗). If q∗≤F ((Λα)−1(p∗)), then π∗must be induced by the following map T (x) =  Λα(x) ∧p∗q∗ F (x) if x ≥F −1(q∗) x if x < F −1(q∗)."
+    },
+    {
+      "paper_id": "2410.24191v1",
+      "chunk_idx": 48,
+      "text": "the value (without cost) of the pointwise optimal solution in (D’) ignoring the incentive constraints given a fixed p. Let p0(p) = inf{x ≥0 : (1 −α)p ≥c(x,p)}. By definition, we have τα(p) ≥p0(p) ∧(Λα)−1(p). By Assumption 1, we have Λα(x) < x + K for every x ≥0.40 By monotonicity of Λα, we have (Λα)−1(p) > p −K. Therefore, for p > kK, (Λα)−1(p) > k−1 k p. Assumption 1 also implies that for every p > kK, c(k−1 k p,p) > p and hence p0(p) > k−1 k p. It follows that τα(p) > k−1 k p for p > kK. As µ has increasing hazard rate, Theorem 4.3 of Barlow and Proschan (1996) im- plies that F (x) ≤e−λx for x ≥m, where m is the median of µ. Therefore, for every p > max{kK, k k−1m}, we have τα(p) > m, and hence �∞ τα(p) (Λα(x) −p)dF(x) < �∞ τα(p) (x + K −p)dF(x) ≤(τα(p) + K −p + 1 λ)e−λτα(p), where the last equality follows from integrating by parts. Therefore, for every p > max{kK, k k−1m} and q ∈[F (τα(p)),1], W (p,q) ≤(1 −α)pF (τα(p)) + α(τα(p) + K −p + 1 λ)e−λτα(p) ≤(1 −α)pe−λk−1 k p + α(K + 1 λ)e−λk−1 k p →0 as p →+∞. There exists ¯p > rM such that W (p,q) < (1 −α)P S(π0) + αCS(π0) for all p > ¯p. Therefore, it is without loss to consider supp∈[rM, ¯p],q∈[F (τα(p)),1] W (p,q), and a solution exists by the continuity of W . A.4 Proof that (D) = (D’) (Lemma 1)."
+    },
+    {
+      "paper_id": "2411.03001v2",
+      "chunk_idx": 4,
+      "text": "of D(t) per time unit δt, that is, the area of a layer grown during δt. Hence, Q is a strength of a fluid source in deterministic Laplacian growth. By dividing the boundary of D(t) into N ≫1 tiny segments, we define the probability of a particle landing on the i-th segment by the harmonic measure µi, of the segment [42], as in DLA. The statistical weight that ki particles land to the i-th bin (i = 1, 2, . . . , N) within a time unit is given by the multinomial distribution: P(k1, . . . , kN) = N KK! N � i=1 µki i ki! , (2) where �N i=1 µi = 1 and �N i=1 ki = K. The entropy func- tional defined as S = log P for the grown layer δD in the Stirling approximation (ki ≫1) reads: S[δD] = K log N − N � i=1 ki log(ki/µiK). (3) Equation of growth as the extremal of the entropy. The entropy (3) is maximized when the particle count per 1 There is no reference to Tikhonov in [24], since the author of [24] was unaware of this regularization in 1998. segment is k∗ i = Kµi. To make a connection to the LG problem, we introduce a conformal map z(t, w) from the exterior of the unit circle on the w-plane to the domain D(t) on the physical z-plane with z = x + iy, such that the boundary of D(t) is z(t, exp(iϕ)) parametrized by ϕ ∈[0, 2π]. By equating a small displacement of the i-th bin of a boundary, viδt, to √ ℏk∗ i , we immediately obtain the deterministic (classical) equation of growth (see [37, 38] for details): Im (¯ztzϕ) = Q/(2π), (4) where subscripts denote partial derivatives. Entropy ="
+    },
+    {
+      "paper_id": "2411.04376v2",
+      "chunk_idx": 72,
+      "text": "Normal Maximum Minimum 5.89 2.67 6.47 6.47 6.46 5.85 2.73 6.38 6.37 6.37 6.06 3.33 6.54 6.54 6.53 5.70 4.45 5.92 5.91 5.92 5.82 2.63 6.38 6.39 6.38 5.95 2.87 6.48 6.48 6.48 Evaluation Set Size CW Clean FGSM PGD SPSA FGSM PGD SPSA Normal Maximum Minimum 5.88 2.66 6.45 6.46 6.46 5.84 2.73 6.36 6.37 6.37 6.04 3.31 6.52 6.53 6.53 5.70 4.45 5.93 5.91 5.92 5.80 2.61 6.37 6.37 6.37 5.94 2.84 6.47 6.48 6.48 Prediction Set Size Attack Methods Defense Model Figure 5. RQ3: Estimated and True Payoff Matrices for TissueMNIST (APS) CW Clean FGSM PGD SPSA FGSM PGD SPSA Normal Maximum Minimum 6.60 4.53 6.96 6.97 6.96 7.46 4.30 8.00 8.00 8.00 6.62 4.27 7.04 7.04 7.04 5.65 5.58 5.68 5.68 5.69 6.87 4.44 7.28 7.27 7.27 6.58 4.10 7.01 7.01 7.01 Evaluation Set Size CW Clean FGSM PGD SPSA FGSM PGD SPSA Normal Maximum Minimum 6.59 4.53 6.96 6.96 6.96 7.46 4.30 8.00 8.00 8.00 6.62 4.27 7.04 7.04 7.04 5.66 5.58 5.69 5.68 5.68 6.88 4.44 7.27 7.28 7.28 6.58 4.09 7.01 7.01 7.01 Prediction Set Size Attack Methods Defense Model Figure 6. RQ3: Estimated and True Payoff Matrices for TissueMNIST (RSCP) From the reward matrix depicted in Figure 1-6, it can be discerned that, in comparison to the APS method, the RSCP generally yields larger prediction sets. This observation is supported by the findings of RQ1 and RQ2, which attribute this to the higher coverage achieved by RSCP through the utilization of more stable classification points (CPs). Furthermore, when applying the RSCP method on the PathM- NIST dataset, the constructed Nash equilibrium scenario involves both the defender and the attacker employing multiple defense and attack models to reach a zero-sum game process. Consequently, in the box plot shown in Figure 7, the Nash"
+    },
+    {
+      "paper_id": "2411.07984v2",
+      "chunk_idx": 3,
+      "text": "listed at 6’ 10”, 240 lbs., which is above the league-average; uses his size to drive to the basket; and is considered a very poor shooter. Curry, meanwhile, is listed at 6’ 2”, 185 lbs., which is below the league-average; and is considered one of the best shooters ever. Ultimately, FG% depends on complex interactions between location, player, and player character- istics like position, height, and weight. The cases of Curry and Simmons underscore the difficul- ties faced in trying to specify these interactions correctly in a parametric model. On this view, Bayesian Additive Regression Trees (BART; Chipman et al., 2010), which approximates regression functions using an ensemble of binary regression trees, offers a compelling alternative. With BART, users often obtain excellent predictive results and reasonably calibrated uncertainties “off-the-shelf” without needing to pre-specify the functional form of the regression function and with very little hyperparameter tuning. (a) (b) (c) (d) Figure 1: Locations of made and missed shots for Steph Curry (a) and Ben Simmons (b). BART- estimated FG% as a function for location for Curry (c) and Simmons (d). Because BART is based on axis-aligned regression trees, the BART-based shot charts in Figures 1c 2 and 1d display characteristic horizontal and vertical striations. Since these trees are nothing more than piecewise constant step functions, BART-based shot charts will generally not be smooth and will instead contain sharp discontinuities. For instance, Curry’s and Simmons’ estimated FG% jump from below 50% (blue shading) to above 50% (orange/red shading) and then back to below 50% within regions C, D, and E in the figures. Several authors have proposed BART extensions based on regression trees that output smooth functions including linear models (Prado et al., 2021), splines (Low-Kam et al., 2015; Cao et al., 2025), and Gaussian processes (GPs; Starling et al., 2020;"
+    },
+    {
+      "paper_id": "2411.08263v1",
+      "chunk_idx": 29,
+      "text": "many cases the observer may believe that the right models of choice is shortlist and choose, but may not know which model is the right one. It however comes with 18The composition of the problem sizes is as follows: 6 problems of size two, 2 problems of size 3, 3 problems of size 4, 2 problems of size 5, 3 problems of size 6, 3 problems of size 7, and 1 problem of size 8. 13 the cost that detailed information about revealed preferences (what is better than what) can not be given without specifying the model. Hence, we then zoom in to a given model to actually compute the density of the revealed preference relation."
+    },
+    {
+      "paper_id": "2411.09721v2",
+      "chunk_idx": 24,
+      "text": "3.2 Extension to the Full Model To understand in what way the reduced models capture the stability properties of the full model, we need to describe how they are related at sufficient detail. Let a general ODE have the form ˙x = F(x) and assume that the state has been split according to x = [y; z], that is, � ˙y ˙z � = � Fy(y, z) Fz(y, z) � . (3.9) 14 The reduced model for z is obtained by assuming that ˙y ≈0 and such that, given z, y can be uniquely solved for 0 = Fy(y, z) ⇐⇒y = G(z). (3.10) The reduced model is then simply ˙z = Fz(G(z), z), (3.11) and the reduced model’s Jacobian is given by Jz = ∂yFzG′(z) + ∂zFz = −∂yFz[∂yFy]−1∂zFy + ∂zFz. (3.12) By contrast, the full Jacobian reads J = � ∂yFy ∂zFy ∂yFz ∂zFz � , (3.13) and by a block decomposition [23] the determinant is given by det(J) = det(∂yFy) × det � ∂zFz −∂yFz[∂yFy]−1∂zFy � . (3.14) In general, both Jacobians J and Jz depend on a parameter vector θ, say, such that we can write J = J(θ) and equivalently for Jz. Since the determinant of the negative Jacobian is the 0th order term of the characteristic polynomial, we formulate the following lemma by comparing (3.12) and (3.14): Lemma 3.5. Let px(λ) ≡det(λI −J) be the characteristic polynomial for the full Jaco- bian and equivalently define pz(λ) ≡det(λI −Jz). Suppose that for some parameter θ, all coefficients are positive except for possibly the 0th order term px(0). Suppose also that the order reduction is definite in the sense that ∂yFy is either positive or negative definite for all considered parameters θ. Then, as a function of θ, px(0) switches sign simultaneously with pz(0) and in"
+    },
+    {
+      "paper_id": "2411.11059v1",
+      "chunk_idx": 13,
+      "text": "increases, the agent receives a positive reward for aligning with sentiment. This reward reinforces sentiment-driven decisions that are supported by actual price movements. • Volatility Adjustment: The sentiment reward is scaled by recent price volatility for each stock, reducing the weight of sentiment in highly volatile conditions. This adjustment helps prevent the agent from over-relying on sentiment in unstable mar- kets. This multi-part reward structure encourages the agent to maximize net worth while con- sidering sentiment-based insights and managing transaction costs. The sentiment align- ment reward encourages trades that align with prevailing market sentiment, improving the agent’s overall responsiveness to sentiment (Schulman et al., 2017). 4. Experiments and Results"
+    },
+    {
+      "paper_id": "2412.05508v1",
+      "chunk_idx": 24,
+      "text": "and N increases, corresponding to the dashed line on the left plot. Right: one dimensional slice of F with N = 108. and more treatments are incorporated into the platform. Measuring costs of human labor for col- laborative projects is not straightforward. Furthermore, the metric of returns in most experiments is different from dollars, and converting between the two metrics often relies on a noisy black-box. As a result, the exact takeaway for experimentation practice depends on the firm. We suggest a suite of several exercises that firms can use to study decision procedures given their bespoke costs and risk tolerances, as follows. The exercises are illustrated on Program 1 of Figure 1. See also [ADMO+20] for an excellent related discussion on data from Microsoft Bing. We first study the dependence of p-value thresholds on implementation costs; we can reverse- engineer the implementation costs for which p < 0.05 is optimal given a linear utility and the estimated prior from Figure 1. With cost si, it is optimal to ship a tested idea i whenever E[∆i|�∆i] ≥si. By the same arguments as Prop. 1, there is a unique value of �∆i above which it is optimal to ship. Figure 7a shows the implied p-value threshold as a function of si. The result suggests that the p = 0.05 decision threshold is optimal with implementation costs of about 9 times the magnitude of |µ|. Whether this cost is significant or insignificant greatly depends on the scale of |µ| and other parameters specific to the experimentation program. Interpreting this cost should be done in a firm-specific manner. However, rough conversions between this metric and dollars in the Netflix context suggests an implementation cost equivalent to a year’s worth of work for several engineers or data scientists. This is realistic for some ideas,"
+    },
+    {
+      "paper_id": "2412.10128v2",
+      "chunk_idx": 1,
+      "text": "Features are individual measurable properties of what is be- ing studied. The performance of a classifier depends on the interrelationship between the number of samples and fea- tures used. Although adding more features to the dataset can improve accuracy, this happens as long as the signal dominates noise. Beyond that point, the model accuracy reduces, and this phenomenon is known as peaking [13]. Also, dealing with high-dimensional data poses challenges such as increased training time, algorithmic complexity, storage space, and noise in datasets, collectively known as the ’curse of dimensionality.’ Feature selection is a type of dimensionality reduction that avoids irrelevant data collection, recovers genuine sig- nals with high probability, and provides good prediction re- sults. Feature selection algorithms face several key chal- lenges, including minimizing accuracy loss when selecting a smaller feature set. Simplicity in algorithm design is pre- ferred to reduce overfitting and avoid complex, ad-hoc im- plementations. Additionally, it is beneficial for algorithms to account for nonlinear feature patterns to capture more complex relationships beyond linear associations [6, 32]. In a multi-class classification setup, one can perform feature selection through various approaches: filter meth- ods operate independently of learning algorithms, wrapper methods depend on learning algorithms to iteratively im- prove the quality of selected features, and embedded meth- ods integrate the feature selection phase into the super- vised/unsupervised learning algorithms [11, 20]. Usually, these methods are performed by considering all data col- lectively, without distinguishing between different classes. Therefore, these approaches face scalability issues as the number of data points or classes increases, leading to com- putational inefficiencies and potential loss of accuracy. The usual approach is to optimize a margin-maximizing loss function, which scales as O(C) with the number of classes C. Our work emphasizes individual class modeling, independently leveraging a generative model and feature se-"
+    },
+    {
+      "paper_id": "2412.17712v2",
+      "chunk_idx": 13,
+      "text": "The process Y admits the explicit representation as Y ν t = e−tpy + �t 0 e(s−t)phνs ds . (2.3) Equipped with the unimpacted price model (2.1) and the transient impact price model (2.3), the midprice process S is given by Sν t = Y ν t + zt . (2.4) Broker’s Inventory and Cash: The broker’s inventory process QB,ν,η and cash process XB,ν,η are given by    dQB,ν,η t = (νt −ηt) dt, QB,ν,η 0 = qB, (2.5) where qB ∈L2(F0), and    dXB,ν,η t = (−(Sν t + a νt)⊤νt + (Sν t + b ηt)⊤ηt) dt, XB,ν,η 0 = xB, (2.6) where xB ∈L2(F0), a and b are K × K constant positive definite matrices representing stylized instantaneous transaction costs incurred by the broker (when trading with the lit market) and the informed trader (when trading with the broker), respectively. Informed trader’s Inventory and Cash: The informed trader’s inventory process QI,η and cash process XI,ν,η are given by    dQI,η t = ηt dt , QI,η 0 = qI , where qI ∈L2(F0), and    dXI,ν,η t = −(Sν t + bηt)⊤ηt dt , XI,ν,η 0 = xI , where xI ∈L2(F0). We denote by ∥A∥the operator norm of the matrix A. Recall that if A is a positive semi-definite matrix and t ≤0, then ∥etA∥≤1. Lemma 2.1. Y ν ∈H2 G. QB,ν,η, QI,η ∈H2 F. Sν is a continuous F-semimartingale. QB,ν,η, XB,ν,η, QI,η, XI,ν,η are F-adapted continuous finite variation processes. Proof. As E ��T 0 |νs|2 ds � < ∞, �t 0 |e(s−t)phνs| ds ≤ �t 0 ∥e(s−t)p∥∥h∥|νs| ds ≤∥h∥t1/2 ��t 0 |νs|2 ds �1/2 < ∞, ∀t ∈[0, T ] a.s. (2.7) Since ν is G-progressively measurable, (2.7) implies Y ν is a G-adapted continuous finite variation"
+    }
+  ],
+  "models": {
+    "qwen3:8b": {
+      "median_ms": 5059.5,
+      "mean_ms": 4978,
+      "mean_output_tokens": 59.5,
+      "per_chunk": [
+        {
+          "paper_id": "2401.01872v2",
+          "chunk_idx": 40,
+          "context": "This paper introduces a Bayesian method for multiple imputation of hierarchical nonlinear time series data, addressing issues with missing data in educational datasets. The passage outlines the problem of missing data in hierarchical time series and the limitations of standard imputation methods when dealing with nonlinear relationships.",
+          "prompt_tokens": 392,
+          "output_tokens": 53,
+          "ms": 5092
+        },
+        {
+          "paper_id": "2401.06740v2",
+          "chunk_idx": 2,
+          "context": "This paper introduces a deep learning method for pricing European basket options under jump-diffusion models, focusing on solving partial integro-differential equations using implicit-explicit minimizing movement schemes. The passage introduces the problem of pricing basket options, defines the payoff structure, and highlights the importance of incorporating jumps in financial models.",
+          "prompt_tokens": 749,
+          "output_tokens": 63,
+          "ms": 5800
+        },
+        {
+          "paper_id": "2401.07152v3",
+          "chunk_idx": 37,
+          "context": "This paper introduces a leave-two-out (LTO) procedure for improved inference in synthetic control methods, addressing limitations of traditional placebo tests. The passage specifically discusses LTO sensitivity analyses applied to classic synthetic control case studies, evaluating how conclusions depend on the equal weights assumption and comparing the power of LTO and placebo tests across different significance levels.",
+          "prompt_tokens": 989,
+          "output_tokens": 68,
+          "ms": 6444
+        },
+        {
+          "paper_id": "2401.07152v3",
+          "chunk_idx": 66,
+          "context": "This paper introduces a refined placebo test for inference in synthetic control methods, addressing limitations of traditional permutation inference. The passage provides a survey of applications of synthetic controls across various studies, highlighting differences in donor pools and time periods, along with examples of treated units and outcomes.",
+          "prompt_tokens": 969,
+          "output_tokens": 54,
+          "ms": 4766
+        },
+        {
+          "paper_id": "2402.09721v6",
+          "chunk_idx": 7,
+          "context": "This paper investigates generalized principal-agent problems where the agent learns to respond to the principal's strategies without commitment power. The passage discusses how no-swap-regret learning agents lead to utility outcomes converging to the classical Stackelberg equilibrium, and how mean-based learning agents can allow the principal to achieve significantly better results.",
+          "prompt_tokens": 862,
+          "output_tokens": 64,
+          "ms": 5285
+        },
+        {
+          "paper_id": "2402.09721v6",
+          "chunk_idx": 31,
+          "context": "This paper investigates generalized principal-agent problems where the agent learns to respond to the principal's strategies without commitment. The passage specifically establishes a lower bound on the principal's utility when the agent uses no-regret learning algorithms, showing that the principal's utility approaches the optimal value minus a term dependent on the regret of the learning algorithm.",
+          "prompt_tokens": 730,
+          "output_tokens": 66,
+          "ms": 5027
+        },
+        {
+          "paper_id": "2403.06613v3",
+          "chunk_idx": 41,
+          "context": "This paper investigates maxitive functions with respect to general preorders, focusing on stochastic orders. The passage specifically discusses maxitivity under the increasing convex stochastic order, including the definition of integrated quantile functions and their role in characterizing the order.",
+          "prompt_tokens": 869,
+          "output_tokens": 49,
+          "ms": 4203
+        },
+        {
+          "paper_id": "2403.08753v2",
+          "chunk_idx": 15,
+          "context": "This paper investigates how volatility changes affect the identification and estimation of dynamic causal effects in proxy-SVAR models, showing that stability restrictions can lead to consistent estimates. The passage introduces the baseline proxy-SVAR framework, detailing the structural representation of proxies and shocks, along with the assumptions and adjustments for using raw proxies.",
+          "prompt_tokens": 926,
+          "output_tokens": 62,
+          "ms": 5151
+        },
+        {
+          "paper_id": "2404.03773v2",
+          "chunk_idx": 7,
+          "context": "This paper addresses the optimal control problem for a sailboat aiming to reach an upwind buoy under varying wind directions. The passage introduces key terminology related to sailboat dynamics, including the no-go zone, tacking, and beating upwind, which are essential for understanding the control strategies and motion equations derived in the paper.",
+          "prompt_tokens": 696,
+          "output_tokens": 65,
+          "ms": 5185
+        },
+        {
+          "paper_id": "2404.07128v3",
+          "chunk_idx": 16,
+          "context": "This paper investigates the learning of deep convolutional network image classifiers using stochastic gradient descent and over-parametrization. The passage presents a general result, specifically a bound on the logistic risk of the estimated classifier, under certain assumptions about the model and data.",
+          "prompt_tokens": 898,
+          "output_tokens": 51,
+          "ms": 4394
+        },
+        {
+          "paper_id": "2404.17736v3",
+          "chunk_idx": 42,
+          "context": "This paper introduces DiffJSCC, a diffusion-aided joint source-channel coding framework for high-realism wireless image transmission, leveraging pre-trained Stable Diffusion models. The passage provides references to prior works on perceptual metrics, GANs, and vision transformers that inform the methodology and context of DiffJSCC.",
+          "prompt_tokens": 737,
+          "output_tokens": 66,
+          "ms": 5277
+        },
+        {
+          "paper_id": "2404.17763v2",
+          "chunk_idx": 23,
+          "context": "This paper addresses likelihood-based inference in exponential family graphical models with intractable normalizing constants, focusing on computational methods to estimate parameters and structure. The passage specifically discusses penalized maximum likelihood estimation and Bayesian inference in high-dimensional settings, introducing an ℓ1-penalized estimator for sparse graph structure learning.",
+          "prompt_tokens": 939,
+          "output_tokens": 62,
+          "ms": 5383
+        },
+        {
+          "paper_id": "2404.19707v3",
+          "chunk_idx": 44,
+          "context": "This paper investigates the identification and estimation of structural threshold and smooth transition vector autoregressive models using non-Gaussianity. The passage specifically discusses the implementation of a structural logistic smooth transition vector autoregressive model to analyze the effects of climate policy uncertainty shocks on the U.S. macroeconomy, focusing on regime-specific impacts and identification strategies.",
+          "prompt_tokens": 722,
+          "output_tokens": 69,
+          "ms": 5623
+        },
+        {
+          "paper_id": "2404.19707v3",
+          "chunk_idx": 48,
+          "context": "This paper examines the identification and estimation of structural threshold and smooth transition vector autoregressive models using non-Gaussianity, with an empirical focus on the effects of climate policy uncertainty shocks on the U.S. macroeconomy. The passage discusses generalized impulse response functions (GIRFs) in a structural logistic smooth transition vector autoregressive model, highlighting how a positive climate policy uncertainty shock affects production, inflation, and economic policy uncertainty across different regimes.",
+          "prompt_tokens": 758,
+          "output_tokens": 91,
+          "ms": 7024
+        },
+        {
+          "paper_id": "2405.07102v3",
+          "chunk_idx": 62,
+          "context": "This paper introduces a nested instrumental variables framework to estimate the average treatment effect among always-compliers and switchers using multiple versions of an IV. The passage discusses how treatment received is determined by both the binary IV and an additional instrument, highlighting the structure of the nested IV design.",
+          "prompt_tokens": 439,
+          "output_tokens": 56,
+          "ms": 4250
+        },
+        {
+          "paper_id": "2405.07102v3",
+          "chunk_idx": 114,
+          "context": "This paper introduces a nested instrumental variables framework to estimate and generalize the average treatment effect among always-compliers and switchers. The passage provides the proof of Theorem 6, establishing conditions for the validity of statistical tests under the nested IV assumption.",
+          "prompt_tokens": 1049,
+          "output_tokens": 50,
+          "ms": 4268
+        },
+        {
+          "paper_id": "2405.15779v2",
+          "chunk_idx": 13,
+          "context": "This paper introduces LiteNeXt, a lightweight ConvMixer-based model for medical image segmentation, emphasizing efficiency and performance. The passage specifically describes the LGEMixer Block, an improved feature extractor that combines LocalMixer and FarMixer submodules to enhance spatial information extraction.",
+          "prompt_tokens": 939,
+          "output_tokens": 57,
+          "ms": 4943
+        },
+        {
+          "paper_id": "2405.15779v2",
+          "chunk_idx": 62,
+          "context": "This paper introduces LiteNeXt, a lightweight and efficient ConvMixer-based model for medical image segmentation, and this passage provides references to prior works in biomedical image segmentation, including U-Net, fully convolutional networks, and attentional methods.",
+          "prompt_tokens": 1114,
+          "output_tokens": 51,
+          "ms": 4474
+        },
+        {
+          "paper_id": "2405.17070v2",
+          "chunk_idx": 91,
+          "context": "This passage illustrates the temporal patterns and seasonal variations in electricity load across multiple years, highlighting the complex interplay of daily, weekly, and annual seasonal effects, which are critical for mid-term forecasting. It provides a visual representation of load trends during specific periods, supporting the paper's focus on capturing multifaceted load characteristics using Generalized Additive Models.",
+          "prompt_tokens": 670,
+          "output_tokens": 71,
+          "ms": 5549
+        },
+        {
+          "paper_id": "2406.06941v3",
+          "chunk_idx": 137,
+          "context": "This paper focuses on efficient estimation and data fusion under semiparametric restrictions on outcome mean functions, particularly in causal inference settings. The passage specifically addresses the uniform boundedness of certain functions under linear confounding bias, contributing to the theoretical foundation for constructing efficient estimators.",
+          "prompt_tokens": 441,
+          "output_tokens": 55,
+          "ms": 4120
+        },
+        {
+          "paper_id": "2406.07066v2",
+          "chunk_idx": 64,
+          "context": "This paper focuses on inferring the connectivity parameter $ p $ of a directed Erd\\\"os-R\\'enyi graph in a system of interacting binary chains. The passage provides a proof of the independence of certain events and establishes distributional properties of the layer processes and their compatibility with the system's structure.",
+          "prompt_tokens": 962,
+          "output_tokens": 61,
+          "ms": 5118
+        },
+        {
+          "paper_id": "2406.07066v2",
+          "chunk_idx": 111,
+          "context": "This paper focuses on inferring the connectivity parameter $ p $ of a directed Erd\\\"os-R\\'enyi graph in a system of binary interacting chains. The passage provides bounds on the norms of certain matrices and their differences from approximations, supporting the analysis of the estimator's performance and the probabilistic properties of the system.",
+          "prompt_tokens": 1115,
+          "output_tokens": 66,
+          "ms": 5658
+        },
+        {
+          "paper_id": "2406.14184v3",
+          "chunk_idx": 30,
+          "context": "This paper introduces integral priors for Bayesian model selection in multiple comparisons, extending the methodology from two to more models. The passage discusses integral posteriors and evidence approximation, focusing on Monte Carlo methods to estimate Bayes factors and address challenges in simulating from integral priors.",
+          "prompt_tokens": 770,
+          "output_tokens": 55,
+          "ms": 4682
+        },
+        {
+          "paper_id": "2406.19619v3",
+          "chunk_idx": 52,
+          "context": "This paper introduces ScoreFusion, a method for fusing pre-trained diffusion models using KL barycenters to enhance generative modeling of target populations. The passage discusses the generalization error of basic diffusion models, focusing on decomposition into training error, approximation error, and convergence error, with insights into random feature models and their limitations.",
+          "prompt_tokens": 782,
+          "output_tokens": 67,
+          "ms": 6310
+        },
+        {
+          "paper_id": "2406.19619v3",
+          "chunk_idx": 101,
+          "context": "This paper introduces ScoreFusion, a method for fusing pre-trained diffusion models using KL barycenters to enhance generative modeling of target populations. The passage discusses checkpoint merging as a comparative approach, demonstrating how merging LoRA checkpoints of auxiliary models can be equivalent to merging their full checkpoints.",
+          "prompt_tokens": 500,
+          "output_tokens": 59,
+          "ms": 5931
+        },
+        {
+          "paper_id": "2407.00037v2",
+          "chunk_idx": 2,
+          "context": "This paper investigates how additional information about other agents' types affects mechanism design, focusing on partial and full implementation. The passage introduces the model and key question of whether social choice functions can become implementable when agents have more information about other agents' types.",
+          "prompt_tokens": 588,
+          "output_tokens": 51,
+          "ms": 5115
+        },
+        {
+          "paper_id": "2407.07009v2",
+          "chunk_idx": 27,
+          "context": "This paper introduces the XAI-CHEST framework to enhance the efficiency of deep learning-based channel estimation in 6G networks by providing explainable AI. The passage specifically discusses the simulation results and fine-tuning of the noise threshold in the XAI-CHEST framework, demonstrating its impact on bit error rate performance and computational complexity.",
+          "prompt_tokens": 986,
+          "output_tokens": 66,
+          "ms": 6295
+        },
+        {
+          "paper_id": "2407.11518v1",
+          "chunk_idx": 17,
+          "context": "This paper introduces an ensemble transport filter using optimized Maximum Mean Discrepancy to improve posterior approximation. The passage specifically discusses the weights of particles generated by the transport map and their role in the analysis step of the filter.",
+          "prompt_tokens": 304,
+          "output_tokens": 45,
+          "ms": 3803
+        },
+        {
+          "paper_id": "2408.07379v2",
+          "chunk_idx": 18,
+          "context": "This passage discusses the behavior of the posterior covariance in Gaussian processes under large bandwidth conditions, focusing on how the distance of points to a subset S influences the covariance estimate. It illustrates the theoretical findings through examples and visualizations, highlighting the geometric structure of the covariance field.",
+          "prompt_tokens": 740,
+          "output_tokens": 54,
+          "ms": 4450
+        },
+        {
+          "paper_id": "2409.13467v3",
+          "chunk_idx": 12,
+          "context": "This paper introduces a higher-order message passing framework for glycan representation learning using graph neural networks. The passage discusses the use of positional encodings, specifically random walk and Laplacian-based methods, to enhance node feature representation in glycan structure analysis.",
+          "prompt_tokens": 478,
+          "output_tokens": 51,
+          "ms": 3907
+        },
+        {
+          "paper_id": "2410.00318v3",
+          "chunk_idx": 29,
+          "context": "This passage is part of the paper's evaluation of mechanical reasoning in Vision Language Models, specifically focusing on the models' performance in understanding pulley systems and sheave movements. It demonstrates the models' struggles with reasoning about mechanical systems, such as determining the direction of movement in pulley arrangements.",
+          "prompt_tokens": 675,
+          "output_tokens": 59,
+          "ms": 4744
+        },
+        {
+          "paper_id": "2410.01999v4",
+          "chunk_idx": 101,
+          "context": "The paper introduces CodeMMLU, a multi-task benchmark for assessing code understanding and reasoning in CodeLLMs. This passage provides examples of multiple-choice questions focused on debugging programming problems, illustrating the types of tasks included in CodeMMLU.",
+          "prompt_tokens": 350,
+          "output_tokens": 50,
+          "ms": 3734
+        },
+        {
+          "paper_id": "2410.01999v4",
+          "chunk_idx": 156,
+          "context": "The paper introduces CodeMMLU, a multi-task benchmark for assessing code understanding and reasoning in CodeLLMs. This passage provides an example of execution prediction questions within CodeMMLU, highlighting the benchmark's focus on evaluating a model's ability to reason about program execution.",
+          "prompt_tokens": 341,
+          "output_tokens": 56,
+          "ms": 3958
+        },
+        {
+          "paper_id": "2410.04110v3",
+          "chunk_idx": 5,
+          "context": "This paper addresses mutual coupling-aware channel estimation and beamforming for RIS-assisted MIMO communications. The passage discusses the electromagnetically consistent models of mutual coupling using scattering parameters and highlights the limitations of previous channel estimation methods that neglect mutual coupling effects.",
+          "prompt_tokens": 876,
+          "output_tokens": 51,
+          "ms": 4434
+        },
+        {
+          "paper_id": "2410.04110v3",
+          "chunk_idx": 27,
+          "context": "This paper addresses channel estimation and beamforming in RIS-assisted MIMO systems by incorporating mutual coupling effects. The passage specifically discusses the CS formulation based on the exact model, highlighting the increased dimensionality of measurement and basis matrices due to mutual coupling and the resulting complexity challenges.",
+          "prompt_tokens": 659,
+          "output_tokens": 56,
+          "ms": 4187
+        },
+        {
+          "paper_id": "2410.04110v3",
+          "chunk_idx": 63,
+          "context": "This paper addresses mutual coupling-aware channel estimation and beamforming for RIS-assisted MIMO communications, incorporating electromagnetic models and compressed sensing techniques. The passage provides references to related works on channel estimation in RIS-aided systems, highlighting prior research on model training, sparse recovery, and beamforming strategies.",
+          "prompt_tokens": 1154,
+          "output_tokens": 62,
+          "ms": 5275
+        },
+        {
+          "paper_id": "2410.07222v1",
+          "chunk_idx": 66,
+          "context": "This paper explores systemic risk measures in financial networks using graph neural networks (GNNs) and permutation equivariant architectures. The passage discusses the performance of different models, including GNNs, XPENNs, and FNNs, in terms of inner risk, bailout capital, and training efficiency on a stylised dataset.",
+          "prompt_tokens": 951,
+          "output_tokens": 66,
+          "ms": 5685
+        },
+        {
+          "paper_id": "2410.13015v2",
+          "chunk_idx": 45,
+          "context": "This paper models the P2Y₁/P₂Y₁₂ pathway's role in integrin αₙIbβ₃ activation during platelet aggregation, focusing on RAP1 regulation. The passage discusses components like SERCA, PMCA, and the quasi-steady state approximation used in the model's mathematical framework.",
+          "prompt_tokens": 720,
+          "output_tokens": 68,
+          "ms": 5498
+        },
+        {
+          "paper_id": "2410.23587v3",
+          "chunk_idx": 16,
+          "context": "This paper introduces the CMGF method for calculating moments using the moment-generating function, and this passage specifically presents the conditional MGF for an autoregressive Poisson model, demonstrating its application in deriving moments.",
+          "prompt_tokens": 279,
+          "output_tokens": 43,
+          "ms": 3268
+        },
+        {
+          "paper_id": "2410.24191v1",
+          "chunk_idx": 44,
+          "context": "This passage details the mathematical formulation of the optimal advertising plan's impact on the demand curve, specifically how the map T(x) is defined to induce the producer-optimal pricing strategy under targeted advertising. It illustrates the mechanism through which the monopolist manipulates demand to maximize profits, using key terms like Λα, F, and q∗.",
+          "prompt_tokens": 418,
+          "output_tokens": 70,
+          "ms": 5128
+        },
+        {
+          "paper_id": "2410.24191v1",
+          "chunk_idx": 48,
+          "context": "This paper examines how targeted advertising interacts with market power and analyzes producer-optimal and consumer-optimal advertising plans. The passage provides a mathematical proof of Theorem 2, focusing on the value of the pointwise optimal solution and its implications for welfare under different advertising strategies.",
+          "prompt_tokens": 776,
+          "output_tokens": 55,
+          "ms": 4584
+        },
+        {
+          "paper_id": "2411.03001v2",
+          "chunk_idx": 4,
+          "context": "This paper applies a variational principle to pattern selection in nonlinear interface dynamics, focusing on problems like the Saffman-Taylor finger and universal fjord opening angle. The passage discusses the entropy functional derived from a multinomial distribution, leading to the classical equation of growth in Laplacian dynamics.",
+          "prompt_tokens": 680,
+          "output_tokens": 60,
+          "ms": 4868
+        },
+        {
+          "paper_id": "2411.04376v2",
+          "chunk_idx": 72,
+          "context": "This paper presents a game-theoretic approach to enhance robustness of conformal prediction in medical imaging against adversarial attacks. The passage discusses experimental results comparing different defense strategies, highlighting how the RSCP method achieves higher coverage by utilizing more stable classification points, and explores the Nash equilibrium in a zero-sum game framework.",
+          "prompt_tokens": 1224,
+          "output_tokens": 64,
+          "ms": 5925
+        },
+        {
+          "paper_id": "2411.07984v2",
+          "chunk_idx": 3,
+          "context": "This paper introduces ridgeBART, an extension of Bayesian Additive Regression Trees (BART) that uses trees outputting ridge functions to enable scalable piecewise smoothing. The passage discusses the limitations of standard BART in producing smooth outputs and highlights the need for more flexible models like ridgeBART to accurately estimate spatially smooth shooting probabilities in basketball.",
+          "prompt_tokens": 795,
+          "output_tokens": 70,
+          "ms": 5797
+        },
+        {
+          "paper_id": "2411.08263v1",
+          "chunk_idx": 29,
+          "context": "This paper examines the welfare relevance of two-stage choice models, highlighting identification issues in preference and revealed preference relations. The passage discusses the experimental setup used to analyze the density of revealed preference relations across different models, emphasizing the limitations of specifying detailed revealed preferences without a particular model.",
+          "prompt_tokens": 489,
+          "output_tokens": 55,
+          "ms": 4207
+        },
+        {
+          "paper_id": "2411.09721v2",
+          "chunk_idx": 24,
+          "context": "This paper explores mathematical models of Hes1 dynamics in neural development, focusing on the relationship between deterministic and stochastic models. The passage specifically discusses the extension of a reduced model to a full model, analyzing stability properties through Jacobian matrices and characteristic polynomials.",
+          "prompt_tokens": 877,
+          "output_tokens": 52,
+          "ms": 4505
+        },
+        {
+          "paper_id": "2411.11059v1",
+          "chunk_idx": 13,
+          "context": "This paper explores the use of financial news-driven reinforcement learning for portfolio management, integrating sentiment analysis from large language models to enhance trading strategies. The passage details the reward structure in the RL framework, including sentiment alignment and volatility adjustment, to improve decision-making in dynamic markets.",
+          "prompt_tokens": 415,
+          "output_tokens": 54,
+          "ms": 4077
+        },
+        {
+          "paper_id": "2412.05508v1",
+          "chunk_idx": 24,
+          "context": "This paper discusses how to optimize returns from experimentation programs by rethinking statistical practices and decision-making thresholds. The passage specifically examines the role of implementation costs in determining optimal p-value thresholds and their implications for experimentation practices.",
+          "prompt_tokens": 710,
+          "output_tokens": 43,
+          "ms": 3706
+        },
+        {
+          "paper_id": "2412.10128v2",
+          "chunk_idx": 1,
+          "context": "This paper introduces a novel feature selection method for latent factor models that improves classification by selecting features per class using low-rank generative models and a signal-to-noise ratio criterion. The passage discusses the importance of feature selection in high-dimensional data, the challenges of the curse of dimensionality, and the limitations of traditional methods that do not account for class-specific patterns.",
+          "prompt_tokens": 630,
+          "output_tokens": 74,
+          "ms": 5899
+        },
+        {
+          "paper_id": "2412.17712v2",
+          "chunk_idx": 13,
+          "context": "This paper examines Broker-Trader Partial Information Nash-Equilibria in a dealer market where an informed trader and a broker interact under partial information. The passage specifically details the mathematical formulation of the midprice process, inventory dynamics, and cash processes for both the broker and the informed trader, along with their adaptation to respective filtrations.",
+          "prompt_tokens": 967,
+          "output_tokens": 67,
+          "ms": 5888
+        }
+      ]
+    },
+    "gemma3": {
+      "median_ms": 2674.5,
+      "mean_ms": 2637,
+      "mean_output_tokens": 61.5,
+      "per_chunk": [
+        {
+          "paper_id": "2401.01872v2",
+          "chunk_idx": 40,
+          "context": "This passage introduces the paper’s focus on multiple imputation of hierarchical nonlinear time series data, specifically addressing challenges related to missing data and differing assumptions between analysis and imputation models. The research proposes a Bayesian method incorporating smoothing splines to improve estimation and prediction of school enrollment rates.",
+          "prompt_tokens": 379,
+          "output_tokens": 55,
+          "ms": 1883
+        },
+        {
+          "paper_id": "2401.06740v2",
+          "chunk_idx": 2,
+          "context": "This section introduces the problem of pricing European basket call options based on jump-diffusion models, specifically focusing on the key elements of moneyness, weights, and the payoff function. The passage details the mathematical formulation of a basket call option, highlighting the importance of incorporating random jumps to accurately represent market behavior.",
+          "prompt_tokens": 735,
+          "output_tokens": 61,
+          "ms": 2562
+        },
+        {
+          "paper_id": "2401.07152v3",
+          "chunk_idx": 37,
+          "context": "This passage details sensitivity analyses of the leave-two-out (LTO) procedure and the placebo test applied to case studies, including the German Reunification and Basque Country, to assess their performance under varying effect sizes and significance levels. The analysis explores the robustness of these synthetic control methods, particularly concerning the equal weights assumption and the implications for inference at different alpha levels.",
+          "prompt_tokens": 974,
+          "output_tokens": 75,
+          "ms": 3244
+        },
+        {
+          "paper_id": "2401.07152v3",
+          "chunk_idx": 66,
+          "context": "This section provides a survey of synthetic control applications, illustrating the method’s use across diverse contexts like economic liberalization and natural disasters, alongside examples of varying donor pool sizes and pre- and post-treatment periods. The passage details specific synthetic control analyses conducted on various units, including states, countries, and regions, showcasing the method’s adaptability and the challenges associated with small sample sizes.",
+          "prompt_tokens": 945,
+          "output_tokens": 78,
+          "ms": 3425
+        },
+        {
+          "paper_id": "2402.09721v6",
+          "chunk_idx": 7,
+          "context": "This section discusses the principal’s achievable utility when facing a learning agent, specifically examining the impact of no-swap-regret learning algorithms on outcomes within generalized principal-agent problems. The passage highlights how no-swap-regret learning deviates from best-response behavior, leading to potential improvements for the principal under certain conditions.",
+          "prompt_tokens": 866,
+          "output_tokens": 67,
+          "ms": 3108
+        },
+        {
+          "paper_id": "2402.09721v6",
+          "chunk_idx": 31,
+          "context": "This section analyzes the principal’s utility guarantee when the agent employs contextual no-regret learning algorithms in a generalized principal-agent problem. Specifically, it demonstrates that the principal can achieve a utility of at least $CReg(T) T −ε, provided the principal uses a signaling scheme that achieves an objective within a specified tolerance.",
+          "prompt_tokens": 726,
+          "output_tokens": 69,
+          "ms": 2918
+        },
+        {
+          "paper_id": "2403.06613v3",
+          "chunk_idx": 41,
+          "context": "This section explores maxitivity with respect to the increasing convex stochastic order, detailing how concave functions and their associated quantile functions define a complete lattice within the ordered space. Specifically, it outlines the properties of the quantile function Qξ(u) and its role in determining the supremum of a sequence of random variables within this order.",
+          "prompt_tokens": 863,
+          "output_tokens": 65,
+          "ms": 2919
+        },
+        {
+          "paper_id": "2403.08753v2",
+          "chunk_idx": 15,
+          "context": "This section details the baseline proxy-SVAR model, outlining the representation of proxies as innovations and their subsequent projection onto the information set at time t-1. The passage explains how raw proxies, denoted as Zt, can be incorporated into the system by adjusting the matrix Γ and stacking the lags of Zt in Xt.",
+          "prompt_tokens": 853,
+          "output_tokens": 66,
+          "ms": 2873
+        },
+        {
+          "paper_id": "2404.03773v2",
+          "chunk_idx": 7,
+          "context": "This section defines key terminology related to sailboat trajectory optimization, specifically focusing on concepts like no-go zones, tacks, and jibs within the context of the optimal control problem for reaching a buoy.",
+          "prompt_tokens": 686,
+          "output_tokens": 41,
+          "ms": 1950
+        },
+        {
+          "paper_id": "2404.07128v3",
+          "chunk_idx": 16,
+          "context": "This section details a theoretical bound on the logistic risk of a stochastic gradient descent estimate for a deep convolutional network classifier, demonstrating convergence independence of image dimension. The passage presents a rigorous mathematical framework, including key terms like `ϑ`, `Θ∗`, and `fn`, to analyze the performance of the classifier.",
+          "prompt_tokens": 893,
+          "output_tokens": 62,
+          "ms": 2790
+        },
+        {
+          "paper_id": "2404.17736v3",
+          "chunk_idx": 42,
+          "context": "This paper introduces DiffJSCC, a novel deep JSCC framework utilizing Stable Diffusion for high-realism wireless image transmission, and cites relevant research on perceptual metrics and GAN training techniques. The referenced papers provide context for the deep learning approaches and training methodologies employed within DiffJSCC.",
+          "prompt_tokens": 703,
+          "output_tokens": 57,
+          "ms": 2734
+        },
+        {
+          "paper_id": "2404.17763v2",
+          "chunk_idx": 23,
+          "context": "This section explores penalized maximum likelihood estimation and Bayesian inference for high-dimensional PEGMs, focusing on the ℓ1-penalized estimator and its optimization using proximal algorithms.",
+          "prompt_tokens": 909,
+          "output_tokens": 36,
+          "ms": 2094
+        },
+        {
+          "paper_id": "2404.19707v3",
+          "chunk_idx": 44,
+          "context": "This section details the implementation of the structural LSTVAR model, specifically examining Regime 2 and the identification of the climate policy uncertainty (CPU) shock through historical event alignment. The passage focuses on the blended identification strategy used to address weak identification issues within the model’s parameters.",
+          "prompt_tokens": 706,
+          "output_tokens": 57,
+          "ms": 2538
+        },
+        {
+          "paper_id": "2404.19707v3",
+          "chunk_idx": 48,
+          "context": "This section examines generalized impulse response functions (GIRFs) within a structural threshold vector autoregressive model incorporating climate policy uncertainty (CPU) shocks, illustrating the model’s response to these shocks across both regimes. The passage details the observed patterns of GIRFs, specifically focusing on the effects of a positive CPU shock on inflation and production, referencing related literature and potential mechanisms within the model.",
+          "prompt_tokens": 731,
+          "output_tokens": 78,
+          "ms": 3326
+        },
+        {
+          "paper_id": "2405.07102v3",
+          "chunk_idx": 62,
+          "context": "This section details the estimation of the Switcher Average Treatment Effect (SWATE) within the nested instrumental variables framework, utilizing the joint potential treatment received under two versions of a binary IV. The paper explores the generalizability of IV estimates, particularly concerning compliance rates, and examines how these estimates can be efficiently identified and tested.",
+          "prompt_tokens": 421,
+          "output_tokens": 65,
+          "ms": 2587
+        },
+        {
+          "paper_id": "2405.07102v3",
+          "chunk_idx": 114,
+          "context": "This passage details the proof for Theorem 6 within the paper’s nested instrumental variables framework, focusing on the Wald test for identifying the Switcher Average Treatment Effect (SWATE) under specific convergence rate conditions. The proof utilizes assumptions regarding nuisance function estimation and the properties of the underlying data distribution to establish the validity of the test.",
+          "prompt_tokens": 1053,
+          "output_tokens": 67,
+          "ms": 3224
+        },
+        {
+          "paper_id": "2405.15779v2",
+          "chunk_idx": 13,
+          "context": "This passage details the architecture of the LGEMixer block, a core component of the LiteNeXt model, which is a lightweight convolutional model designed for medical image segmentation. The LGEMixer block, inspired by ConvMixer and ConvNeXt, utilizes LocalMixer and FarMixer submodules to extract features from the input feature map.",
+          "prompt_tokens": 925,
+          "output_tokens": 70,
+          "ms": 3063
+        },
+        {
+          "paper_id": "2405.15779v2",
+          "chunk_idx": 62,
+          "context": "This passage provides a list of references relevant to the paper’s exploration of lightweight convolutional models for medical image segmentation, including foundational works like U-Net and recent advancements in attention-based segmentation and contrastive learning. Specifically, it cites research on segmentation techniques, including U-Net, and explores emerging methods like hard positives oriented contrastive learning for improved performance.",
+          "prompt_tokens": 1072,
+          "output_tokens": 73,
+          "ms": 3330
+        },
+        {
+          "paper_id": "2405.17070v2",
+          "chunk_idx": 91,
+          "context": "This section details the inclusion of nuanced seasonal information, specifically incorporating fixed date and weekday holiday effects, within the Generalized Additive Models used for mid-term electricity load forecasting. The passage illustrates the model’s ability to capture temporal patterns like December 15th to January 15th and March 1st to May 10th periods.",
+          "prompt_tokens": 669,
+          "output_tokens": 72,
+          "ms": 2942
+        },
+        {
+          "paper_id": "2406.06941v3",
+          "chunk_idx": 137,
+          "context": "This passage details a bound on the magnitude of linear confounding bias, a key component of the paper’s efficient estimation framework for outcome mean functions under semiparametric restrictions. Specifically, it establishes an upper bound on the L-infinity norm of the confounding bias term, denoted as ζ(x; η∗), based on the size of the η∗ parameters.",
+          "prompt_tokens": 428,
+          "output_tokens": 74,
+          "ms": 2805
+        },
+        {
+          "paper_id": "2406.07066v2",
+          "chunk_idx": 64,
+          "context": "This section of the proof demonstrates the independence of layer processes and their distributions within the larger system of interacting binary chains, relying on a backward regeneration representation to establish probabilistic properties. Specifically, it details the proof of Proposition B.6, which confirms the identical distributions of the backward random walks ˜Izi and Izi, and the Markov chain of (ˆIz1 s , ˆIz2 s ).",
+          "prompt_tokens": 957,
+          "output_tokens": 82,
+          "ms": 3634
+        },
+        {
+          "paper_id": "2406.07066v2",
+          "chunk_idx": 111,
+          "context": "This passage from the appendix details a key result regarding the estimation of the Erdős-Rényi graph density ($p$) in a system of interacting binary chains, utilizing a backward regeneration representation and focusing on the expected squared norms of the correlation matrices.",
+          "prompt_tokens": 1125,
+          "output_tokens": 51,
+          "ms": 2525
+        },
+        {
+          "paper_id": "2406.14184v3",
+          "chunk_idx": 30,
+          "context": "This section details the Monte Carlo estimation of Bayes factors using integral posteriors and Markov chains generated from compact parametric spaces. It explains the simulation process for integral posteriors, highlighting the key steps and independence properties within the ergodic Markov chain.",
+          "prompt_tokens": 735,
+          "output_tokens": 47,
+          "ms": 2133
+        },
+        {
+          "paper_id": "2406.19619v3",
+          "chunk_idx": 52,
+          "context": "This section discusses the generalization error of basic diffusion models, framing the approach within ScoreFusion’s use of random feature models as score estimators for KL barycenters. The passage details the specific random feature model used in the basic diffusion model, including its parameters and training process.",
+          "prompt_tokens": 747,
+          "output_tokens": 55,
+          "ms": 2597
+        },
+        {
+          "paper_id": "2406.19619v3",
+          "chunk_idx": 101,
+          "context": "This section details a baseline comparison for ScoreFusion, utilizing a checkpoint merging approach with LoRA checkpoints from the auxiliary diffusion models. The experiment explores the impact of combining the auxiliary models directly into the Stable Diffusion pipeline, mirroring the method described in the main text.",
+          "prompt_tokens": 485,
+          "output_tokens": 52,
+          "ms": 2019
+        },
+        {
+          "paper_id": "2407.00037v2",
+          "chunk_idx": 2,
+          "context": "This section explores how information about other agents impacts the implementability of social choice functions, specifically examining whether additional signals can transform non-implementable rules into fully implementable ones. The passage details a key finding: incentive compatibility remains unchanged when agents lack information, suggesting a planner focused on partial implementation wouldn't benefit from additional signals.",
+          "prompt_tokens": 573,
+          "output_tokens": 67,
+          "ms": 2660
+        },
+        {
+          "paper_id": "2407.07009v2",
+          "chunk_idx": 27,
+          "context": "This section details the simulation results for the XAI-CHEST framework, evaluating its performance on channel estimation using the STA-FNN scheme and analyzing the impact of noise threshold fine-tuning.",
+          "prompt_tokens": 989,
+          "output_tokens": 40,
+          "ms": 1968
+        },
+        {
+          "paper_id": "2407.11518v1",
+          "chunk_idx": 17,
+          "context": "This passage details the particle weights (i) generated by the transport map Tk within the ensemble-based filter method, which utilizes Maximum Mean Discrepancy to approximate the posterior distribution. The method aims to accurately transport prior particles to posterior particles through an optimized transport map.",
+          "prompt_tokens": 294,
+          "output_tokens": 55,
+          "ms": 2291
+        },
+        {
+          "paper_id": "2408.07379v2",
+          "chunk_idx": 18,
+          "context": "This section analyzes the posterior covariance field in Gaussian processes, specifically examining the behavior of the estimate |RS,ρ(x, y)| in the large bandwidth regime. The passage details how this estimate captures the influence of distance to the observation set S on the posterior covariance, revealing a “tensor product” structure when ρ is large.",
+          "prompt_tokens": 747,
+          "output_tokens": 67,
+          "ms": 3018
+        },
+        {
+          "paper_id": "2409.13467v3",
+          "chunk_idx": 12,
+          "context": "This paper introduces a novel GNN architecture for glycan representation learning, utilizing higher-order message passing to capture complex patterns within glycan structures. Section 4.2 details the experimentation with positional encodings, specifically RandomWalk and Laplacian PEs, to enhance node feature computation within the graph.",
+          "prompt_tokens": 468,
+          "output_tokens": 60,
+          "ms": 2335
+        },
+        {
+          "paper_id": "2410.00318v3",
+          "chunk_idx": 29,
+          "context": "This appendix provides a detailed examination of a specific pulley system experiment used to assess mechanical reasoning in Vision Language Models (VLMs). The passage presents a series of multiple-choice questions designed to evaluate the models’ understanding of force transmission and motion within a system involving gears and pulleys.",
+          "prompt_tokens": 653,
+          "output_tokens": 56,
+          "ms": 2309
+        },
+        {
+          "paper_id": "2410.01999v4",
+          "chunk_idx": 101,
+          "context": "This passage presents an example of a multiple-choice question from CodeMMLU, a benchmark designed to assess code understanding and reasoning capabilities in CodeLLMs through tasks like defect detection and code repair. The benchmark’s diverse questions evaluate a model’s ability to reason about programs beyond simple code generation.",
+          "prompt_tokens": 351,
+          "output_tokens": 62,
+          "ms": 2293
+        },
+        {
+          "paper_id": "2410.01999v4",
+          "chunk_idx": 156,
+          "context": "This passage demonstrates CodeMMLU’s focus on evaluating a CodeLLM’s ability to reason about program execution through multiple-choice questions assessing tasks like code repair and fill-in-the-blank challenges. The benchmark aims to measure deeper code comprehension beyond simple code generation capabilities.",
+          "prompt_tokens": 343,
+          "output_tokens": 59,
+          "ms": 2116
+        },
+        {
+          "paper_id": "2410.04110v3",
+          "chunk_idx": 5,
+          "context": "This section reviews related work on channel estimation, highlighting the use of compressed sensing (CS) and scattering parameters, while noting the absence of mutual coupling (MC) consideration in prior research. The passage specifically details the evolution of MC-aware models, including impedance and scattering parameter representations, and their application to channel estimation.",
+          "prompt_tokens": 854,
+          "output_tokens": 64,
+          "ms": 2804
+        },
+        {
+          "paper_id": "2410.04110v3",
+          "chunk_idx": 27,
+          "context": "This paper investigates mutual coupling-aware channel estimation and beamforming for RIS-assisted communication, and this section details the CS formulation incorporating the measurement matrix Ψmc and basis matrix Dmc.",
+          "prompt_tokens": 636,
+          "output_tokens": 38,
+          "ms": 1749
+        },
+        {
+          "paper_id": "2410.04110v3",
+          "chunk_idx": 63,
+          "context": "This paper investigates mutual coupling-aware channel estimation and beamforming for RIS-assisted MIMO communication, specifically referencing prior work on compressed sensing and channel estimation techniques for millimeter-wave systems. The passage cites relevant research on channel estimation methods, including those utilizing dictionary learning and atomic norm minimization, within the context of RIS-aided wireless communication.",
+          "prompt_tokens": 1116,
+          "output_tokens": 67,
+          "ms": 3009
+        },
+        {
+          "paper_id": "2410.07222v1",
+          "chunk_idx": 66,
+          "context": "This section details the numerical experiments evaluating graph neural networks (GNNs) and (X)PENNs for approximating systemic risk measures and optimal random allocations within stochastic financial networks. The passage describes the training process and architecture of these models, highlighting their permutation equivariant nature and the challenges associated with training large FNN(L) networks.",
+          "prompt_tokens": 941,
+          "output_tokens": 67,
+          "ms": 3119
+        },
+        {
+          "paper_id": "2410.13015v2",
+          "chunk_idx": 45,
+          "context": "This section details the dynamical systems model developed to investigate the P2Y$_1$/$_{12}$ pathway’s role in integrin $\\alpha_{\\rm IIb}\\beta_3$ activation during platelet aggregation, focusing on RAP1 regulation. The passage specifically compares RAP1-GTP integrals to JON/A binding assays to validate the model’s parameters and predictions.",
+          "prompt_tokens": 690,
+          "output_tokens": 78,
+          "ms": 3233
+        },
+        {
+          "paper_id": "2410.23587v3",
+          "chunk_idx": 16,
+          "context": "This passage details a new method, CMGF, for calculating moments of a random variable using its moment-generating function, particularly useful when derivatives are difficult to obtain. Specifically, equation (8) presents the conditional moment-generating function for an autoregressive Poisson process.",
+          "prompt_tokens": 279,
+          "output_tokens": 54,
+          "ms": 2032
+        },
+        {
+          "paper_id": "2410.24191v1",
+          "chunk_idx": 44,
+          "context": "This section details the proof of the advertising plan’s form, specifically the “producer-optimal” and “consumer-optimal” advertising plans designed to flexibly manipulate demand curves for a monopolist. The passage outlines the mapping function, T(x), used to determine the optimal advertising level based on price and quantity targets.",
+          "prompt_tokens": 385,
+          "output_tokens": 64,
+          "ms": 2332
+        },
+        {
+          "paper_id": "2410.24191v1",
+          "chunk_idx": 48,
+          "context": "This section details the proof of the producer-optimal advertising plan’s value, demonstrating how flexible advertising strategies, defined as α, impact demand manipulation and welfare under a monopolist’s pricing decisions. The proof utilizes assumptions about the advertising function Λα and its inverse to derive a key result regarding the optimal advertising expenditure as price increases.",
+          "prompt_tokens": 791,
+          "output_tokens": 67,
+          "ms": 2842
+        },
+        {
+          "paper_id": "2411.03001v2",
+          "chunk_idx": 4,
+          "context": "This section details the variational pattern selection approach, specifically examining the growth of a layer using entropy maximization and relating it to the deterministic Laplacian growth equation. The passage focuses on the multinomial distribution and the entropy functional derived from particle counts, ultimately leading to the classical equation of growth.",
+          "prompt_tokens": 669,
+          "output_tokens": 56,
+          "ms": 2372
+        },
+        {
+          "paper_id": "2411.04376v2",
+          "chunk_idx": 72,
+          "context": "This section details the experimental evaluation of the game-theoretic conformal prediction framework, specifically examining its performance on the TissueMNIST dataset and illustrating the payoff matrices and Nash equilibrium scenarios achieved through the RSCP method.",
+          "prompt_tokens": 1181,
+          "output_tokens": 41,
+          "ms": 2132
+        },
+        {
+          "paper_id": "2411.07984v2",
+          "chunk_idx": 3,
+          "context": "This section introduces BART and its limitations regarding discontinuous output, highlighting the challenges of modeling complex interactions like those observed in shot charts using traditional piecewise constant regression trees. The passage then explores how BART’s axis-aligned trees create characteristic striations and why this approach necessitates further development for smoother, more realistic function estimation.",
+          "prompt_tokens": 777,
+          "output_tokens": 63,
+          "ms": 2689
+        },
+        {
+          "paper_id": "2411.08263v1",
+          "chunk_idx": 29,
+          "context": "This section details an experiment designed to illustrate the welfare (ir)relevance issues within two-stage choice models, specifically examining the density of revealed preference relations. The experiment utilized a series of problems with varying sizes to demonstrate the significantly lower performance of these models compared to rational choice.",
+          "prompt_tokens": 487,
+          "output_tokens": 57,
+          "ms": 2202
+        },
+        {
+          "paper_id": "2411.09721v2",
+          "chunk_idx": 24,
+          "context": "This section details the mathematical relationship between the reduced and full spatial models of Hes1 dynamics, focusing on Jacobian analysis and determinant calculations to assess stability properties. The passage explains how the reduced model, derived from the full model’s ODEs, is linked through a Jacobian comparison, highlighting the importance of parameter θ in these models.",
+          "prompt_tokens": 845,
+          "output_tokens": 66,
+          "ms": 2733
+        },
+        {
+          "paper_id": "2411.11059v1",
+          "chunk_idx": 13,
+          "context": "This section details the implementation of sentiment-enhanced reinforcement learning for portfolio management, specifically focusing on a multi-part reward structure that balances net worth maximization with sentiment alignment and volatility adjustment.",
+          "prompt_tokens": 409,
+          "output_tokens": 37,
+          "ms": 1587
+        },
+        {
+          "paper_id": "2412.05508v1",
+          "chunk_idx": 24,
+          "context": "This section explores the role of costs in optimizing experimentation programs, building upon the A/B Testing Problem framework and its implications for p-value thresholds. The passage details how implementation costs, particularly those associated with human labor and conversion metrics, influence the optimal testing strategy and decision-making within a firm.",
+          "prompt_tokens": 708,
+          "output_tokens": 61,
+          "ms": 2584
+        },
+        {
+          "paper_id": "2412.10128v2",
+          "chunk_idx": 1,
+          "context": "This section introduces the challenges of feature selection, particularly within high-dimensional datasets and multi-class classification, highlighting the “curse of dimensionality” and the need for methods that prioritize signal over noise. The passage details various feature selection approaches, emphasizing their limitations when treating all classes collectively and introducing the paper’s focus on class-specific modeling.",
+          "prompt_tokens": 609,
+          "output_tokens": 70,
+          "ms": 2790
+        },
+        {
+          "paper_id": "2412.17712v2",
+          "chunk_idx": 13,
+          "context": "This passage details the stochastic processes governing the broker’s inventory and cash, alongside the informed trader’s, within the partial information Nash equilibrium framework of the broker-trader model. Specifically, it provides the explicit representation of the midprice process Sνt and defines the key processes like QB,ν,η and XI,ν,η, incorporating transaction costs and utilizing the unimpacted price model.",
+          "prompt_tokens": 940,
+          "output_tokens": 83,
+          "ms": 3424
+        }
+      ]
+    }
+  }
+}

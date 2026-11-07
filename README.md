@@ -218,6 +218,27 @@ From [`results/m6_report.md`](results/m6_report.md), each comparison changes one
 - **Most of the drop comes from the questions.** Inside the single full-index run, `dev_sample` questions score 0.894 Correct and the other 2,590 questions score 0.835. Retrieval is almost the same (R@5 0.927 vs 0.915), but those questions are answered less well when answered (0.934 vs 0.892), abstained on more often (0.043 vs 0.063), and include harder text-image questions (Correct 0.806 vs 0.699). Every prompt and threshold was tuned on `dev_sample`, so it is an optimistic estimate; **the `full` numbers are the honest ones.** Of the 427 wrong answers among the other questions, 216 had the gold section in the top-5 (a generation or judging miss), 164 were refusals, and only 47 were retrieval misses.
 - **Abstention weakens as the corpus grows.** On the same 152 `abstention_set` questions, HALO answered 34 with the full index against 21 with the dev index. For 17 of the 34, the top passage came from an official distractor: more papers means more passages close enough to a question that the grader judges them sufficient (24 of the 34 were graded sufficient on the first attempt). Some of these may genuinely be answered by another paper; they were not hand-checked.
 
+### Chunking benchmark (M9)
+
+Three chunking strategies on the 100-paper dev index, same retrieval pipeline (`hybrid_rerank`), `dev_sample` (n = 303). From [`results/m9_chunking.md`](results/m9_chunking.md):
+
+| Strategy | Chunks | R@5 | R@10 | MRR | nDCG@10 | Ingest cost |
+|---|---|---|---|---|---|---|
+| **Section-aware (shipped)**: 300-word windows that never cross a section | 6,740 | 0.944 | 0.970 | 0.830 | 0.865 | 3 min |
+| Fixed-size: the same windows, ignoring sections | 5,406 | 0.766 | 0.815 | 0.642 | 0.684 | 2 min |
+| Section-aware + contextual enrichment: 1–2 LLM lines situating each chunk in its paper | 6,740 | 0.941 | 0.980 | 0.837 | 0.872 | 188 min (3.2 GPU-h of `gemma3`) |
+
+```mermaid
+xychart-beta
+    title "MRR by chunking strategy (hybrid_rerank, dev_sample)"
+    x-axis [section, fixed, enriched]
+    y-axis "MRR" 0.6 --> 0.9
+    bar [0.830, 0.642, 0.837]
+```
+
+- **Section boundaries matter.** Fixed-size windows lose 0.18 R@5. Part of that is structural: 46 gold sections are too short to be the majority of any window, so they can never be hit. But on the 257 questions fixed-size *can* answer, it still trails (R@5 0.903 vs 0.957, MRR 0.757 vs 0.856).
+- **Contextual enrichment is a tie, so it is not shipped.** It improves R@10 and MRR slightly but loses 0.003 R@5. Per question it moved the gold section up for 36 and down for 35. Those differences are within run-to-run noise (re-embedding the same chunks moved dense R@5 by 0.003). Rebuilding the full index would take about 29 GPU-hours. It was not run end-to-end, because retrieval showed no gain and most wrong answers are generation misses (D42).
+
 ## Known limitations
 
 - **Text only.** Figures and tables are not parsed, so questions whose answer lives in an image or a table are answered from surrounding prose or not at all. The modality rows above show the gap.

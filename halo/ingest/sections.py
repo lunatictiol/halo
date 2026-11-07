@@ -54,22 +54,41 @@ def map_blocks(blocks: list[str], sections: list[dict], n: int, min_match: float
     return out
 
 
+def _windows(toks: list[tuple[str, int, int]], chunk_words: int, overlap_words: int) -> list[dict]:
+    """Word windows over (word, page, section_id) tokens; a window's section is the one most of its words come
+    from, ties to the earlier one (Counter.most_common keeps insertion order)."""
+    out = []
+    for start in range(0, max(len(toks) - overlap_words, 1), chunk_words - overlap_words):
+        window = toks[start:start + chunk_words]
+        out.append({
+            "section_id": Counter(s for _, _, s in window).most_common(1)[0][0],
+            "page": window[0][1],
+            "page_end": window[-1][1],
+            "text": " ".join(w for w, _, _ in window),
+        })
+    return out
+
+
+def _tokens(blocks) -> list[tuple[str, int, int]]:
+    return [(w, b["page"], b["section_id"]) for b in blocks for w in b["text"].split()]
+
+
 def chunk_blocks(blocks: list[dict], chunk_words: int, overlap_words: int) -> list[dict]:
     """Group consecutive blocks of one section into word windows; chunks never cross sections.
 
     blocks: [{"section_id", "page", "text"}] in reading order.
     Returns [{"section_id", "page", "page_end", "text"}]; page = page of the first word.
     """
-    step = chunk_words - overlap_words
-    chunks = []
-    for sid, group in groupby(blocks, key=lambda b: b["section_id"]):
-        toks = [(w, b["page"]) for b in group for w in b["text"].split()]
-        for start in range(0, max(len(toks) - overlap_words, 1), step):
-            window = toks[start:start + chunk_words]
-            chunks.append({
-                "section_id": sid,
-                "page": window[0][1],
-                "page_end": window[-1][1],
-                "text": " ".join(w for w, _ in window),
-            })
-    return chunks
+    return [c for _, group in groupby(blocks, key=lambda b: b["section_id"])
+            for c in _windows(_tokens(group), chunk_words, overlap_words)]
+
+
+def chunk_fixed(blocks: list[dict], chunk_words: int, overlap_words: int) -> list[dict]:
+    """M9 baseline: the same word windows over the whole paper, ignoring section boundaries (D41)."""
+    return _windows(_tokens(blocks), chunk_words, overlap_words)
+
+
+def index_text(chunk: dict) -> str:
+    """What embedding, BM25 and the reranker see: the M9 enrichment context (if any) before the chunk (D42).
+    The generator and citations keep using chunk["text"]."""
+    return f"{chunk['context']}\n\n{chunk['text']}" if chunk.get("context") else chunk["text"]

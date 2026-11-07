@@ -1,0 +1,203 @@
+{
+  "run": "m9_ingest_dev_slice_ctx",
+  "timestamp": "2026-11-05T14:52:22+00:00",
+  "git": {
+    "commit": "1c2eda7",
+    "dirty": false
+  },
+  "generator_model": "qwen3:8b",
+  "judge_model": "qwen3:8b",
+  "config": {
+    "data": {
+      "hf_base_url": "https://huggingface.co/datasets/vectara/open_ragbench/resolve/main/pdf/arxiv",
+      "data_dir": "data",
+      "arxiv_pdf_host": "https://export.arxiv.org",
+      "arxiv_delay_seconds": 3.0,
+      "http_timeout_seconds": 60,
+      "http_retries": 5
+    },
+    "splits": {
+      "seed": 20261003,
+      "held_out_papers": 20,
+      "dev_sample_min_questions": 300,
+      "dev_distractors": 60
+    },
+    "models": {
+      "llm": "qwen3:8b",
+      "embedding": "nomic-embed-text",
+      "ollama_url": "http://127.0.0.1:11434"
+    },
+    "ingest": {
+      "chunk_words": 300,
+      "overlap_words": 50,
+      "shingle_n": 5,
+      "min_match": 0.3
+    },
+    "enrich": {
+      "model": "gemma3",
+      "num_gpu": 99,
+      "prompt_version": "enrich-v1",
+      "max_tokens": 100,
+      "cache_path": "data/cache/enrich.jsonl",
+      "system_prompt": "You situate passages from research papers so a search engine can find them. Reply with one or two plain sentences and nothing else.",
+      "user_prompt": "Paper title: {title}\n\nAbstract: {abstract}\n\nSection: {section}\n\nPassage:\n{passage}\n\nWrite one or two sentences that situate this passage within the paper: what the paper is about and what this passage specifically covers. Use the paper's key terms. Do not repeat the passage."
+    },
+    "index": {
+      "qdrant_path": "data/index/qdrant",
+      "embed_batch": 64,
+      "doc_prefix": "search_document: ",
+      "query_prefix": "search_query: "
+    },
+    "llm": {
+      "temperature": 0,
+      "seed": 0,
+      "num_ctx": 8192,
+      "think": false,
+      "num_gpu": 22,
+      "timeout_seconds": 600,
+      "http_retries": 3,
+      "retry_backoff_seconds": 5
+    },
+    "retrieve": {
+      "collection": "full",
+      "k_eval": 10,
+      "k_context": 5,
+      "recall_ks": [
+        5,
+        10
+      ],
+      "method": "hybrid_rerank",
+      "k_candidates": 50,
+      "rrf_k": 60
+    },
+    "bm25": {
+      "k1": 1.5,
+      "b": 0.75,
+      "stemmer": "english",
+      "stopwords": "en"
+    },
+    "rerank": {
+      "model": "BAAI/bge-reranker-v2-m3",
+      "max_length": 512,
+      "batch_size": 16,
+      "device": "cuda"
+    },
+    "generate": {
+      "prompt_version": "baseline-v1",
+      "max_tokens": 400,
+      "sentinel": "INSUFFICIENT_EVIDENCE",
+      "system_prompt": "You answer questions about research papers using ONLY the numbered context passages you are given. Do not use outside knowledge. Answer directly and concisely, in at most a few sentences. If the passages do not contain the information needed to answer the question, reply with exactly {sentinel} and nothing else.",
+      "user_prompt": "Context passages:\n\n{context}\n\nQuestion: {question}\n\nAnswer:"
+    },
+    "judge": {
+      "provider": "ollama",
+      "model": "qwen3:8b",
+      "prompt_version": "judge-v1",
+      "max_tokens": 200,
+      "parse_retries": 1,
+      "system_prompt": "You are a strict, impartial grader for a question-answering system over research papers. Respond only with JSON containing \"reason\" (one sentence) and \"verdict\".",
+      "faithfulness_prompt": "Decide whether the ANSWER is supported by the CONTEXT.\n- \"supported\": every factual claim in the answer is stated in, or directly inferable from, the context.\n- \"unsupported\": at least one claim is absent from or contradicts the context.\nJudge only support by the context, not whether the answer is correct or complete.\n\nQUESTION: {question}\n\nCONTEXT:\n{context}\n\nANSWER: {answer}",
+      "correctness_prompt": "Decide whether the CANDIDATE answer is correct, using the REFERENCE answer as ground truth.\n- \"correct\": the candidate conveys the key facts of the reference and does not contradict it. Different wording, extra detail, or omitting secondary details is fine.\n- \"incorrect\": the candidate misses the main point, contradicts the reference, or answers a different question.\n\nQUESTION: {question}\n\nREFERENCE: {reference}\n\nCANDIDATE: {answer}"
+    },
+    "judges": {
+      "qwen": {
+        "provider": "ollama",
+        "model": "qwen3:8b"
+      },
+      "gemini": {
+        "provider": "gemini",
+        "model": "gemini-2.5-flash"
+      },
+      "gemma": {
+        "provider": "gemini",
+        "model": "gemma-4-31b-it"
+      },
+      "llama": {
+        "provider": "ollama",
+        "model": "llama3.1:8b"
+      }
+    },
+    "gemini": {
+      "url": "https://generativelanguage.googleapis.com/v1beta",
+      "api_key_env": "GEMINI_API_KEY",
+      "thinking_budget": 0,
+      "min_interval_seconds": 6.5,
+      "http_retries": 8
+    },
+    "calibration": {
+      "correctness_runs": [
+        "m6_graph_dev_sample"
+      ],
+      "faithfulness_runs": [
+        "m6_graph_dev_sample",
+        "m6_graph_abstention_set"
+      ],
+      "seed": 20261023,
+      "per_kind": 25,
+      "negative_share": 0.4,
+      "judges": [
+        "qwen",
+        "llama"
+      ]
+    },
+    "graph": {
+      "max_retries": 2,
+      "retrieve_method": "hybrid",
+      "grade_prompt_version": "grade-v2",
+      "grade_max_tokens": 150,
+      "grade_parse_retries": 1,
+      "grade_system_prompt": "You check whether passages retrieved from research papers contain the information needed to answer a question. Respond only with JSON containing \"reason\" (one sentence) and \"verdict\".",
+      "grade_prompt": "Decide whether the PASSAGES give enough to answer the QUESTION.\n- \"sufficient\": the passages cover the subject the question asks about (the same method, model, concept or result), and an answer can be stated, summarised or reasonably inferred from what they say. The passages do not need to state the answer in the question's own words.\n- \"insufficient\": the passages are about a different method, model, dataset or paper than the one the question names, or the key entity or quantity the question asks about does not appear in them at all.\nDo not answer the question and do not use outside knowledge. If insufficient, the reason must name what is missing.\n\nQUESTION: {question}\n\nPASSAGES:\n{context}",
+      "rewrite_prompt_version": "rewrite-v1",
+      "rewrite_max_tokens": 60,
+      "rewrite_system_prompt": "You write search queries for a keyword + semantic search engine over research papers. Output only the new query, on one line, with no explanation.",
+      "rewrite_prompt": "A search did not find passages that answer the question.\n\nQUESTION: {question}\n\nQUERIES ALREADY TRIED:\n{tried}\n\nWHY THE RESULTS FELL SHORT: {reason}\n\nWrite one new search query that is more likely to retrieve the passage answering the question. Use the specific technical terms, method names and quantities the answer would contain. Do not repeat a query already tried."
+    },
+    "cite": {
+      "prompt_version": "cite-v2",
+      "system_prompt": "You answer questions about research papers using ONLY the context passages you are given, labelled [P1], [P2], ... Do not use outside knowledge. Answer directly and concisely, in at most a few sentences. End every sentence with the label of the passage that supports it in square brackets, for example [P2], or [P1][P3] when it combines two passages. Cite only passages that state what the sentence says. Numbers in square brackets inside the passages, such as [21], are the papers' own references: never copy them. If the passages do not contain the information needed to answer the question, reply with exactly {sentinel} and nothing else.",
+      "check_prompt_version": "check-v2",
+      "check_max_tokens": 150,
+      "check_parse_retries": 1,
+      "check_system_prompt": "You verify citations in answers about research papers. Respond only with JSON containing \"reason\" (one sentence) and \"verdict\".",
+      "check_prompt": "Decide whether the PASSAGES, taken together, support the CLAIM, a sentence from an answer to the QUESTION.\n- \"supported\": every part of what the claim states is said in the passages or follows directly from them. Paraphrase and summary are fine.\n- \"unsupported\": some part of the claim is not said in the passages, or contradicts them.\nJudge only these passages and this claim; do not use outside knowledge.\n\nQUESTION: {question}\n\nCLAIM: {claim}\n\nPASSAGES:\n{passages}"
+    },
+    "api": {
+      "max_question_chars": 1000
+    },
+    "ci": {
+      "split": "dev_sample",
+      "results": "ci_retrieval_dev_sample",
+      "baseline": "m8_ci_baseline",
+      "metrics": [
+        "recall@5",
+        "mrr"
+      ],
+      "max_drop": 0.005,
+      "watch": [
+        "halo",
+        "config",
+        "splits",
+        "eval/metrics",
+        "eval/runners",
+        "eval/results.py",
+        "pyproject.toml",
+        "uv.lock"
+      ]
+    }
+  },
+  "kind": "ingest",
+  "split": "dev_slice",
+  "strategy": "ctx",
+  "collection": "dev_slice_ctx",
+  "n_papers": 103,
+  "n_chunks": 6740,
+  "wall_seconds": 11290.1,
+  "enrich": {
+    "chunks": 6740,
+    "prompt_tokens": 5170549,
+    "output_tokens": 414732,
+    "ms": 11449303,
+    "calls": 6453
+  }
+}

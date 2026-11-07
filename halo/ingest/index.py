@@ -8,10 +8,13 @@ from qdrant_client import QdrantClient, models
 
 from halo.config import ROOT
 from halo.data import load_corpus_doc, pdf_dir
+from halo.ingest.enrich import enrich, open_cache
 from halo.ingest.pdf import read_blocks
-from halo.ingest.sections import chunk_blocks, map_blocks, section_title
+from halo.ingest.sections import chunk_blocks, chunk_fixed, index_text, map_blocks, section_title
 
 NO_SECTION = -1
+# M9 chunking strategies (D41-D42): section-aware (M1), fixed windows across sections, section-aware + LLM context.
+STRATEGIES = ("section", "fixed", "ctx")
 
 
 def embed(texts: list[str], prefix: str, cfg: dict) -> list[list[float]]:
@@ -33,10 +36,12 @@ def point_id(paper_id: str, chunk_idx: int) -> str:
     return str(uuid.uuid5(uuid.NAMESPACE_URL, f"halo:{paper_id}:{chunk_idx}"))
 
 
-def paper_chunks(paper_id: str, cfg: dict) -> tuple[list[dict], list[dict]]:
-    """(chunks with full metadata, per-block mapping results) for one paper."""
+def paper_chunks(paper_id: str, cfg: dict, strategy: str = "section") -> tuple[list[dict], list[dict]]:
+    """(chunks with full metadata, per-block mapping results) for one paper. "ctx" chunks like "section";
+    ingest_papers() adds the context."""
     ing = cfg["ingest"]
     sections = load_corpus_doc(paper_id, cfg)["sections"]
+    chunker = chunk_fixed if strategy == "fixed" else chunk_blocks
     blocks = read_blocks(pdf_dir(cfg) / f"{paper_id}.pdf")
     if sections:
         titles = {s["section_id"]: section_title(s["text"]) for s in sections}
@@ -49,7 +54,7 @@ def paper_chunks(paper_id: str, cfg: dict) -> tuple[list[dict], list[dict]]:
     mapped = [{**b, "section_id": m["section_id"]} for b, m in zip(blocks, mapping)]
     chunks = [
         {"paper_id": paper_id, "chunk_idx": i, "section_title": titles[c["section_id"]], **c}
-        for i, c in enumerate(chunk_blocks(mapped, ing["chunk_words"], ing["overlap_words"]))
+        for i, c in enumerate(chunker(mapped, ing["chunk_words"], ing["overlap_words"]))
     ]
     return chunks, mapping
 
@@ -58,18 +63,25 @@ def _paper_filter(paper_id: str) -> models.Filter:
     return models.Filter(must=[models.FieldCondition(key="paper_id", match=models.MatchValue(value=paper_id))])
 
 
-def ingest_papers(client: QdrantClient, collection: str, paper_ids: list[str], cfg: dict) -> list[dict]:
-    """Re-index each paper (delete its old points, upsert new ones). Returns block mappings for stats."""
+def ingest_papers(client: QdrantClient, collection: str, paper_ids: list[str], cfg: dict,
+                  strategy: str = "section", enrich_stats: dict | None = None) -> list[dict]:
+    """Re-index each paper (delete its old points, upsert new ones). Returns block mappings for stats.
+    For strategy "ctx", LLM call counts and tokens accumulate in enrich_stats."""
+    if strategy not in STRATEGIES:
+        raise ValueError(f"unknown chunking strategy {strategy!r}; choose from {STRATEGIES}")
     idx = cfg["index"]
+    cache = open_cache(cfg) if strategy == "ctx" else None
     all_mappings = []
     for n, pid in enumerate(paper_ids, 1):
-        chunks, mapping = paper_chunks(pid, cfg)
+        chunks, mapping = paper_chunks(pid, cfg, strategy)
+        if cache is not None:
+            chunks = enrich(chunks, load_corpus_doc(pid, cfg), cfg, cache, enrich_stats if enrich_stats is not None else {})
         all_mappings.extend({"paper_id": pid, **m} for m in mapping)
         # ponytail: re-embeds every chunk on each run (~minutes for dev_slice); add a content-hash
         # cache if full-corpus re-ingestion gets slow.
         vectors = []
         for i in range(0, len(chunks), idx["embed_batch"]):
-            vectors += embed([c["text"] for c in chunks[i:i + idx["embed_batch"]]], idx["doc_prefix"], cfg)
+            vectors += embed([index_text(c) for c in chunks[i:i + idx["embed_batch"]]], idx["doc_prefix"], cfg)
         if not client.collection_exists(collection):
             client.create_collection(collection, vectors_config=models.VectorParams(
                 size=len(vectors[0]), distance=models.Distance.COSINE))
