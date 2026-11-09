@@ -3,15 +3,22 @@
     uv run uvicorn halo.api.app:app            # then POST /query {"question": "..."}
 """
 
+import json
 import threading
 from contextlib import asynccontextmanager
+from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from halo.api.stream import SSE_HEADERS, run_events, sse_frame
+from halo.api.ui import make_router
 from halo.config import load_config
 
 CFG = load_config()
+BUSY = "busy: another query is running"
 
 
 class Query(BaseModel):
@@ -76,6 +83,17 @@ def create_app(graph=None) -> FastAPI:
         if retriever:
             retriever.close()
 
+    def events(question: str):
+        """The event stream of one run. The lock is taken inside the generator, so a stream that is never
+        started (client gone before the first byte) cannot leak it, and released in its `finally`."""
+        if not lock.acquire(blocking=False):
+            yield "error", {"detail": BUSY}
+            return
+        try:
+            yield from run_events(state["graph"], question, to_answer)
+        finally:
+            lock.release()
+
     api = FastAPI(title="HALO", lifespan=lifespan)
 
     @api.get("/health")
@@ -87,6 +105,19 @@ def create_app(graph=None) -> FastAPI:
         with lock:
             return to_answer(state["graph"].invoke({"question": q.question.strip()}))
 
+    @api.post("/query/stream")
+    def query_stream(q: Query) -> StreamingResponse:
+        if lock.locked():  # fast path for a clear status; `events` still guards the race
+            raise HTTPException(status_code=429, detail=BUSY)
+
+        def frames():
+            for name, data in events(q.question.strip()):
+                yield sse_frame(name, json.dumps(data))
+
+        return StreamingResponse(frames(), media_type="text/event-stream", headers=SSE_HEADERS)
+
+    api.include_router(make_router(events, lock.locked, Query))
+    api.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
     return api
 
 

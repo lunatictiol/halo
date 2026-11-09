@@ -1,0 +1,5 @@
+<div hx-ext="sse" sse-connect="/ui/stream?question={{ question | urlencode }}" sse-close="done">
+  <h2 class="q">{{ question }}</h2>
+  <ol id="steps" class="steps" sse-swap="step" hx-swap="beforeend"></ol>
+  <div class="answer" sse-swap="final" hx-swap="innerHTML"><p class="working">Working&hellip;</p></div>
+</div>

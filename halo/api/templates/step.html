@@ -1,0 +1,21 @@
+<li class="step step-{{ s.node }}">
+  <span class="node">{{ s.node }}</span>
+  <span class="detail">
+  {%- if s.node == "retrieve" -%}
+    attempt {{ s.attempt }}{% if s.attempt > 1 %} (retry {{ s.attempt - 1 }}){% endif %}: <q>{{ s.query }}</q>
+  {%- elif s.node == "rerank" -%}
+    kept the top {{ s.top | length }} passages
+  {%- elif s.node == "grade" -%}
+    <b class="verdict verdict-{{ s.verdict }}">{{ s.verdict or "unparsed" }}</b>{% if s.reason %} &mdash; {{ s.reason }}{% endif %}
+  {%- elif s.node == "rewrite" -%}
+    new query: <q>{{ s.query }}</q>
+  {%- elif s.node == "generate" -%}
+    {{ "generator abstained" if s.abstained else "drafted an answer" }}
+  {%- elif s.node == "verify" -%}
+    {% if s.skipped %}nothing to check{% else %}{{ s.sentences }} sentences checked, {{ s.removed }} removed{% endif %}
+  {%- elif s.node == "abstain" -%}
+    {{ s.reason }}
+  {%- endif -%}
+  </span>
+  <span class="ms">{{ s.ms }} ms</span>
+</li>

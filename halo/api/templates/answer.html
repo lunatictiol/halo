@@ -1,0 +1,27 @@
+{% if a.abstained %}
+<div class="abstained">
+  <h3>No answer</h3>
+  <p>HALO abstained: {{ a.abstain_reason }}</p>
+</div>
+{% else %}
+<div class="answered">
+  <h3>Answer</h3>
+  <p>{{ a.answer }}</p>
+  {% if a.citations %}
+  <p class="chips">
+    {% for c in a.citations -%}
+    <a class="chip" href="https://arxiv.org/pdf/{{ c.paper_id | urlencode }}#page={{ c.page }}" target="_blank" rel="noopener">
+      {{ c.paper_id }} &sect;{{ c.section_id }}{% if c.section_title %} {{ c.section_title }}{% endif %} p.{{ c.page }}
+    </a>
+    {%- endfor %}
+  </p>
+  {% endif %}
+</div>
+{% endif %}
+{% if a.removed %}
+<details class="flagged" open>
+  <summary>{{ a.removed | length }} unsupported claim{{ "" if a.removed | length == 1 else "s" }} removed</summary>
+  <ul>{% for t in a.removed %}<li><del>{{ t }}</del></li>{% endfor %}</ul>
+</details>
+{% endif %}
+<p class="meta">{{ a.retries }} retr{{ "y" if a.retries == 1 else "ies" }} &middot; {{ a.total_ms }} ms</p>
