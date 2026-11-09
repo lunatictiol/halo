@@ -14,7 +14,7 @@
     <p class="sub">Grounded answers over a research-paper corpus. It retries when the evidence is weak and abstains when the corpus can't answer.</p>
     <form hx-get="/ui/ask" hx-target="#result" hx-swap="innerHTML">
       <label for="question" class="sr">Question</label>
-      <input id="question" name="question" type="text" required maxlength="1000" autofocus
+      <input id="question" name="question" type="text" required maxlength="{{ max_chars }}" autofocus
              placeholder="Ask about the papers in the corpus">
       <button type="submit">Ask</button>
     </form>

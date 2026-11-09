@@ -139,6 +139,34 @@ def test_ui_stream_renders_steps_chip_and_removed_claim():
     assert "<del>Made-up claim.</del>" in final and "1 unsupported claim removed" in final
 
 
+def test_ui_stream_while_busy_renders_error_then_done():
+    gate, started = threading.Event(), threading.Event()
+    with TestClient(create_app(StreamGraph(gate=gate, started=started))) as client:
+        first = threading.Thread(target=lambda: stream(client))
+        first.start()
+        assert started.wait(5)
+        events = parse_sse(client.get("/ui/stream", params={"question": "another"}).text)
+        gate.set()
+        first.join(5)
+        assert not first.is_alive()
+    assert [e for e, _ in events] == ["final", "done"] and "busy" in events[0][1]
+
+
+def test_template_failure_still_ends_with_done():
+    broken = [{"node": "retrieve", "ms": 1}]  # no `attempt`: step.html raises while rendering
+    with TestClient(create_app(StreamGraph(trace=broken, final=ABSTAINED))) as client:
+        events = parse_sse(client.get("/ui/stream", params={"question": "q"}).text)
+        assert client.get("/ui/ask", params={"question": "q"}).status_code == 200  # lock was released
+    assert [e for e, _ in events] == ["final", "done"] and "could not render" in events[0][1]
+
+
+def test_ui_rejects_cross_site_requests():
+    with TestClient(create_app(StreamGraph())) as client:
+        for path in ("/ui/stream", "/ui/ask"):
+            assert client.get(path, params={"question": "q"}, headers={"sec-fetch-site": "cross-site"}).status_code == 403
+            assert client.get(path, params={"question": "q"}, headers={"sec-fetch-site": "same-origin"}).status_code == 200
+
+
 def test_ui_stream_shows_abstention_reason():
     with TestClient(create_app(StreamGraph(trace=TRACE[:3], final=ABSTAINED))) as client:
         events = parse_sse(client.get("/ui/stream", params={"question": "q"}).text)

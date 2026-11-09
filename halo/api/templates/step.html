@@ -6,7 +6,7 @@
   {%- elif s.node == "rerank" -%}
     kept the top {{ s.top | length }} passages
   {%- elif s.node == "grade" -%}
-    <b class="verdict verdict-{{ s.verdict }}">{{ s.verdict or "unparsed" }}</b>{% if s.reason %} &mdash; {{ s.reason }}{% endif %}
+    <b class="verdict verdict-{{ s.verdict if s.verdict in ("sufficient", "insufficient") else "unparsed" }}">{{ s.verdict or "unparsed" }}</b>{% if s.reason %} &mdash; {{ s.reason }}{% endif %}
   {%- elif s.node == "rewrite" -%}
     new query: <q>{{ s.query }}</q>
   {%- elif s.node == "generate" -%}

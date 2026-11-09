@@ -116,7 +116,7 @@ def create_app(graph=None) -> FastAPI:
 
         return StreamingResponse(frames(), media_type="text/event-stream", headers=SSE_HEADERS)
 
-    api.include_router(make_router(events, lock.locked, Query))
+    api.include_router(make_router(events, lock.locked, Query, CFG["api"]["max_question_chars"]))
     api.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
     return api
 

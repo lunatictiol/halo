@@ -50,6 +50,14 @@ def stream_one(base: str, question: str, timeout_s: int) -> dict:
     return {"events": events, "final": final, "total_ms": round((time.perf_counter() - start) * 1000)}
 
 
+def checked(run: dict, label: str) -> dict:
+    """A run that ended in an `error` event (Ollama down, ...) is not a latency; refuse to write it as one."""
+    final = run["final"]
+    if not run["events"] or final is None or "detail" in final:  # answers have no `detail`; error events do
+        raise RuntimeError(f"{label}: the stream ended without an answer ({final}); no results written")
+    return run
+
+
 def record(demo: dict, run: dict) -> dict:
     steps = [e for e in run["events"] if e["event"] == "step"]
     final = run["final"] or {}
@@ -65,11 +73,17 @@ def main() -> None:
     port, timeout_s = cfg["api"]["demo_port"], cfg["api"]["demo_timeout_s"]
     base = f"http://127.0.0.1:{port}"
     demos = json.loads(DEMO.read_text(encoding="utf-8"))
+    try:
+        httpx.get(f"{base}/health", timeout=2)
+    except httpx.TransportError:
+        pass
+    else:  # otherwise wait_healthy could pass against that process and we would time the wrong server
+        raise RuntimeError(f"something is already listening on port {port}; stop it or change [api] demo_port")
     server = subprocess.Popen([sys.executable, "-m", "uvicorn", "halo.api.app:app", "--port", str(port)], cwd=ROOT)
     try:
         wait_healthy(base, timeout_s, server)
-        stream_one(base, demos[0]["question"], timeout_s)  # warm-up: loads the LLM and reranker, not recorded
-        records = [record(d, stream_one(base, d["question"], timeout_s)) for d in demos]
+        checked(stream_one(base, demos[0]["question"], timeout_s), "warm-up")  # loads the LLM and reranker; not recorded
+        records = [record(d, checked(stream_one(base, d["question"], timeout_s), d["role"])) for d in demos]
     finally:
         server.terminate()
         server.wait(30)
