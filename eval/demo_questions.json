@@ -1,0 +1,17 @@
+[
+  {
+    "role": "direct",
+    "query_id": "00f1f703-087e-4808-b838-07c819e68335",
+    "question": "What is the correlation between the tax instrument and recovered tax shock during the Great Moderation?"
+  },
+  {
+    "role": "rescued",
+    "query_id": "83dda238-c421-4f22-aec5-7c6c83875eb3",
+    "question": "What does it mean for an element to be in the lidentity of itself?"
+  },
+  {
+    "role": "abstention",
+    "query_id": "08c9a683-df57-4491-8056-5399b34a304d",
+    "question": "Is the function for estimating causal effects dependent on both alpha and beta transposed with X?"
+  }
+]
