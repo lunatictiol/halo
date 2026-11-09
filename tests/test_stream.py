@@ -121,7 +121,10 @@ def test_stream_rejects_invalid_questions():
 def test_ui_pages_and_fragments():
     with TestClient(create_app(StreamGraph())) as client:
         assert "hx-get=\"/ui/ask\"" in client.get("/").text
-        assert client.get("/static/htmx.min.js").status_code == 200
+        page = client.get("/").text
+        for asset in ("htmx.min.js", "katex.min.js", "katex.min.css", "auto-render.min.js", "math.js", "fonts/KaTeX_Main-Regular.woff2"):
+            assert client.get(f"/static/{asset}").status_code == 200
+            assert asset.startswith("fonts/") or f"/static/{asset}" in page
         assert "role=\"alert\"" in client.get("/ui/ask", params={"question": "  "}).text
         run = client.get("/ui/ask", params={"question": "what is <b>Adam</b>?"}).text
         assert "sse-connect=\"/ui/stream?question=what%20is%20%3Cb%3EAdam%3C/b%3E%3F\"" in run
