@@ -258,6 +258,10 @@ PASSAGES:
 [api]
 # Longest accepted question; the longest Open RAG Bench question is 197 characters.
 max_question_chars = 1000
+# M10 latency runner (`eval.runners.stream_latency`): port of the throwaway server and the longest it waits
+# for startup (index + models) or for one streamed query.
+demo_port = 8765
+demo_timeout_s = 300
 
 [ci]
 # M8 regression gate (D40). `eval.runners.ci run` writes results/<results>.json locally; CI runs `ci check`

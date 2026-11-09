@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HALO</title>
+  <link rel="stylesheet" href="/static/katex.min.css">
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/htmx.min.js"></script>
+  <script src="/static/sse.js"></script>
+  <script defer src="/static/katex.min.js"></script>
+  <script defer src="/static/auto-render.min.js"></script>
+</head>
+<body>
+  <main>
+    <h1>HALO</h1>
+    <p class="sub">Grounded answers over a research-paper corpus. It retries when the evidence is weak and abstains when the corpus can't answer.</p>
+    <form hx-get="/ui/ask" hx-target="#result" hx-swap="innerHTML">
+      <label for="question" class="sr">Question</label>
+      <input id="question" name="question" type="text" required maxlength="{{ max_chars }}" autofocus
+             placeholder="Ask about the papers in the corpus">
+      <button type="submit">Ask</button>
+    </form>
+    <section id="result" aria-live="polite"></section>
+  </main>
+  <script defer src="/static/math.js"></script>
+</body>
+</html>
