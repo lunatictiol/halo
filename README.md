@@ -57,7 +57,7 @@ uv run python scripts/download_data.py          # HF metadata + parsed corpus + 
 uv run python scripts/ingest.py --split full    # chunk + embed the 980 indexable papers into embedded Qdrant (~1-2 h)
 
 uv run python -m halo.cli "What datasets are used to evaluate the proposed method?"
-uv run uvicorn halo.api.app:app                 # POST /query {"question": "..."}, GET /health
+uv run uvicorn halo.api.app:app                 # web UI at http://127.0.0.1:8000/, POST /query, POST /query/stream, GET /health
 ```
 
 For a faster try-out, `scripts/ingest.py --split dev_slice` indexes the 100-paper dev slice and `python -m halo.cli --collection dev_slice "..."` queries it.
@@ -239,6 +239,26 @@ xychart-beta
 - **Section boundaries matter.** Fixed-size windows lose 0.18 R@5. Part of that is structural: 46 gold sections are too short to be the majority of any window, so they can never be hit. But on the 257 questions fixed-size *can* answer, it still trails (R@5 0.903 vs 0.957, MRR 0.757 vs 0.856).
 - **Contextual enrichment is a tie, so it is not shipped.** It improves R@10 and MRR slightly but loses 0.003 R@5. Per question it moved the gold section up for 36 and down for 35. Those differences are within run-to-run noise (re-embedding the same chunks moved dense R@5 by 0.003). Rebuilding the full index would take about 29 GPU-hours. It was not run end-to-end, because retrieval showed no gain and most wrong answers are generation misses (D42).
 
+### Streaming API and web UI (M10)
+
+`POST /query/stream` runs the same pipeline as `/query` and streams it as Server-Sent Events: one `step` event per graph node (`retrieve`, `rerank`, `grade`, `rewrite`, `generate`, `verify`, `abstain`) with its time and what it decided, then a `final` event with the `/query` answer plus `total_ms` and the sentences the grounding check removed. A second request while one is running gets `429 busy`. The page at `/` (htmx + Jinja2, vendored, no build step) shows the same stream live: the corrective loop with its rewrites, citation chips linking to the arXiv PDF at the cited page, abstention reasons, and removed claims struck through.
+
+| Screenshot | Question role | Result |
+|---|---|---|
+| [`docs/m10_direct.png`](docs/m10_direct.png) | answered first try | 0 retries, answer + 1 citation chip |
+| [`docs/m10_rescued.png`](docs/m10_rescued.png) | rescued by a rewrite | 1 retry, answer + 2 citation chips |
+| [`docs/m10_abstention.png`](docs/m10_abstention.png) | correct abstention | 2 retries, "No answer" with the grader's reason |
+
+Latency over HTTP on the full index, after one warm-up query, one run per question ([`results/m10_stream_latency.json`](results/m10_stream_latency.json)):
+
+| Question | Time to first event | Total | Steps |
+|---|---|---|---|
+| answered first try | 1,022 ms | 21.4 s | 5 |
+| rescued by a rewrite | 1,475 ms | 40.5 s | 9 |
+| abstention (2 retries) | 837 ms | 37.7 s | 12 |
+
+The first event is the `retrieve` step finishing, so the user sees progress after 1-1.5 s instead of waiting 21-41 s for the answer. The server's own `total_ms` is within 0.06 s of the client's total, so HTTP and SSE framing add negligible overhead (`/query` itself was not re-timed). It is three runs, not a distribution: an earlier run of the same questions on the same code took 19.8, 36.3 and 34.8 s. A cold server (models not yet loaded) took about 30 s for the first retrieve in the demo screenshots.
+
 ## Known limitations
 
 - **Text only.** Figures and tables are not parsed, so questions whose answer lives in an image or a table are answered from surrounding prose or not at all. The modality rows above show the gap.
@@ -246,7 +266,7 @@ xychart-beta
 - **Citation validity is self-checked and overstated.** The "Cite valid" column is the pipeline's own grounding check (0.97+). When I reviewed 10 cited answers by hand, 7 had valid citations (M5, [`DECISIONS.md`](DECISIONS.md) D35): the checker passes overreaching inferences and two-part sentences where only one part is supported.
 - **Abstention is tested on a proxy.** `abstention_set` questions come from papers that are never indexed. Another indexed paper can occasionally answer one, so a few "wrong" answers there may be right.
 - **Small local model.** An 8B model at Q4 on a 6 GB GPU, with tens of seconds per question (median in the table). A hosted model is a config change (`[models] llm`) that has not been measured.
-- **One query at a time.** The API serializes requests: one local GPU, embedded single-process Qdrant.
+- **One query at a time.** One local GPU and embedded single-process Qdrant: `/query` queues requests, while `/query/stream` and the web UI answer a second concurrent request with `429 busy`.
 - **Tuned on the dev sample.** All prompts and thresholds were chosen on `dev_sample`, which scores higher than the rest of the corpus (see above). Expect the `full` numbers, not the dev ones.
 - **Abstention depends on corpus size.** More distractors give the grader more near-miss passages to accept; abstention fell from 0.862 to 0.776 when the index grew tenfold.
 - **Setup takes a while.** The index is not shipped (it contains the papers' text), so the quickstart downloads 1,000 PDFs and builds the index locally.
