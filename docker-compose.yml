@@ -1,0 +1,50 @@
+# M11 (D44). CPU by default; add the GPU override for NVIDIA:
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up
+# One-time index build (stop `app` first: embedded Qdrant allows one process):
+#   docker compose run --rm app python scripts/download_data.py
+#   docker compose run --rm app python scripts/ingest.py --split full
+# Faster try-out on the ~100-paper slice, served with HALO_COLLECTION=dev_slice docker compose up:
+#   docker compose run --rm app python scripts/ingest.py --split dev_slice
+name: halo
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    volumes:
+      - ollama:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 5s
+      timeout: 10s
+      retries: 30
+    restart: unless-stopped
+
+  app:
+    build:
+      context: .
+      args:
+        TORCH: cpu
+    image: halo:cpu
+    depends_on:
+      ollama:
+        condition: service_healthy
+    # Must own HALO_DATA. Docker Desktop ignores it; on Linux set HALO_UID/HALO_GID to the owner of ./data.
+    user: "${HALO_UID:-1000}:${HALO_GID:-1000}"
+    environment:
+      - HALO_OLLAMA_URL=http://ollama:11434
+      - HALO_COLLECTION  # no value: passed through from the host shell when set, otherwise config's "full"
+    volumes:
+      # PDFs, parsed corpus, Qdrant index, reranker weights: never baked into the image. HALO_DATA relocates it.
+      - ${HALO_DATA:-./data}:/app/data
+    ports:
+      - "127.0.0.1:8000:8000"  # loopback only: the API is unauthenticated and each query occupies the GPU
+    healthcheck:
+      # urlopen raises on the 503 /ready returns until Ollama serves both models.
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/ready')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30m  # first start pulls ~6 GB of models and the ~2 GB reranker before uvicorn listens
+
+volumes:
+  ollama:

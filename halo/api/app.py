@@ -9,10 +9,11 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from halo.api.ready import index_problem, ollama_problems
 from halo.api.stream import SSE_HEADERS, run_events, sse_frame
 from halo.api.ui import make_router
 from halo.config import load_config
@@ -67,8 +68,9 @@ def build_pipeline(cfg: dict):
     return build_graph(default_nodes(retriever, cfg), cfg["graph"]["max_retries"]), retriever
 
 
-def create_app(graph=None) -> FastAPI:
-    """`graph` is injected in tests; by default the real pipeline is built at startup."""
+def create_app(graph=None, ready=lambda: ollama_problems(CFG)) -> FastAPI:
+    """`graph` and `ready` (a callable returning the list of reasons the app is not ready) are injected in tests;
+    by default the real pipeline is built at startup."""
     state = {"graph": graph}
     # ponytail: one query at a time. One local GPU serves the LLM and reranker and embedded Qdrant is
     # single-process, so concurrency would only queue on the GPU; use a Qdrant server + a worker pool to scale.
@@ -79,6 +81,10 @@ def create_app(graph=None) -> FastAPI:
         retriever = None
         if state["graph"] is None:
             state["graph"], retriever = build_pipeline(CFG)
+            problem = index_problem(retriever.client, retriever.collection)
+            if problem:  # fail at startup with the fix in the message, not on the first query
+                retriever.close()
+                raise RuntimeError(problem)
         yield
         if retriever:
             retriever.close()
@@ -99,6 +105,13 @@ def create_app(graph=None) -> FastAPI:
     @api.get("/health")
     def health() -> dict:
         return {"status": "ok", "collection": CFG["retrieve"]["collection"], "llm": CFG["models"]["llm"]}
+
+    @api.get("/ready")
+    def readiness():
+        problems = ready()
+        if problems:
+            return JSONResponse({"status": "not ready", "problems": problems}, status_code=503)
+        return {"status": "ready"}
 
     @api.post("/query", response_model=Answer)
     def query(q: Query) -> dict:  # sync: FastAPI runs it in a worker thread, so the event loop stays free

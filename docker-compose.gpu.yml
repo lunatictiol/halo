@@ -1,0 +1,19 @@
+# NVIDIA GPU override (Docker Desktop WSL2 or NVIDIA Container Toolkit): Ollama and the cross-encoder reranker
+# (1.4 s vs 39.7 s per query on CPU, D29) both use the GPU.
+x-gpu: &gpu
+  resources:
+    reservations:
+      devices:
+        - driver: nvidia
+          count: all
+          capabilities: [gpu]
+
+services:
+  ollama:
+    deploy: *gpu
+  app:
+    build:
+      args:
+        TORCH: cu128
+    image: halo:cu128
+    deploy: *gpu

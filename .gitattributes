@@ -1,2 +1,4 @@
 # Split files are hash-compared byte-for-byte; never let git rewrite their line endings.
 splits/*.json -text
+# Runs inside the Linux image: CRLF would break the shebang.
+*.sh text eol=lf
