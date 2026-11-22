@@ -258,6 +258,8 @@ PASSAGES:
 [api]
 # Longest accepted question; the longest Open RAG Bench question is 197 characters.
 max_question_chars = 1000
+# M11 readiness probe (/ready) and model-presence check: must answer fast, unlike the 600 s generation timeout.
+ollama_timeout_s = 3
 # M10 latency runner (`eval.runners.stream_latency`): port of the throwaway server and the longest it waits
 # for startup (index + models) or for one streamed query.
 demo_port = 8765

@@ -1,0 +1,107 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "HALO: grounded QA runtime and indexing",
+    "output": "docs/architecture/halo-architecture.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/lunatictiol/halo.git",
+      "provider": "github",
+      "revision": "7a99de7805cd18bd7dc02e40056db8dcf0480100"
+    }
+  },
+  "components": [
+    { "id": "user", "type": "external", "label": "Client", "sublabel": "browser · curl · terminal", "pos": [40, 170], "size": [140, 62],
+      "sources": [{ "path": "halo/api/app.py", "line": 99, "end_line": 119 }] },
+    { "id": "ui", "type": "frontend", "label": "Web UI", "sublabel": "htmx + Jinja2 · SSE", "pos": [270, 40], "size": [140, 62],
+      "sources": [{ "path": "halo/api/ui.py", "line": 37, "end_line": 79 }] },
+    { "id": "api", "type": "backend", "label": "FastAPI app", "sublabel": "/query · /query/stream", "tag": "one query at a time", "pos": [270, 170], "size": [140, 62],
+      "sources": [{ "path": "halo/api/app.py", "line": 70, "end_line": 121 }] },
+    { "id": "cli", "type": "backend", "label": "CLI", "sublabel": "python -m halo.cli", "pos": [40, 300], "size": [140, 62],
+      "sources": [{ "path": "halo/cli.py", "line": 15, "end_line": 38 }] },
+
+    { "id": "retrieve", "type": "backend", "label": "retrieve", "sublabel": "graph node · hybrid", "pos": [500, 170], "size": [140, 62],
+      "sources": [{ "path": "halo/graph/pipeline.py", "line": 89, "end_line": 92 }] },
+    { "id": "rerank", "type": "backend", "label": "rerank", "sublabel": "bge-reranker-v2-m3", "pos": [730, 170], "size": [140, 62],
+      "sources": [{ "path": "halo/graph/pipeline.py", "line": 94, "end_line": 97 }, { "path": "halo/retrieve/rerank.py", "line": 21, "end_line": 28 }] },
+    { "id": "grade", "type": "backend", "label": "grade", "sublabel": "LLM: sufficient?", "pos": [960, 170], "size": [140, 62],
+      "sources": [{ "path": "halo/graph/pipeline.py", "line": 99, "end_line": 102 }] },
+    { "id": "rewrite", "type": "backend", "label": "rewrite", "sublabel": "LLM · max 2 retries", "pos": [960, 40], "size": [140, 62],
+      "sources": [{ "path": "halo/graph/pipeline.py", "line": 104, "end_line": 109 }] },
+    { "id": "generate", "type": "backend", "label": "generate", "sublabel": "answer with [Pn] cites", "pos": [1190, 170], "size": [140, 62],
+      "sources": [{ "path": "halo/graph/pipeline.py", "line": 111, "end_line": 117 }, { "path": "halo/generate/cite.py", "line": 40, "end_line": 43 }] },
+    { "id": "verify", "type": "backend", "label": "verify", "sublabel": "per-sentence grounding", "pos": [1420, 170], "size": [140, 62],
+      "sources": [{ "path": "halo/graph/pipeline.py", "line": 119, "end_line": 130 }, { "path": "halo/generate/cite.py", "line": 81, "end_line": 119 }] },
+    { "id": "abstain", "type": "security", "label": "abstain", "sublabel": "answer + reason", "pos": [960, 300], "size": [140, 62],
+      "sources": [{ "path": "halo/graph/pipeline.py", "line": 132, "end_line": 135 }] },
+
+    { "id": "retriever", "type": "backend", "label": "Hybrid Retriever", "sublabel": "RRF k=60 · top-50", "pos": [500, 300], "size": [140, 62],
+      "sources": [{ "path": "halo/retrieve/__init__.py", "line": 12, "end_line": 57 }, { "path": "halo/retrieve/fusion.py", "line": 11, "end_line": 21 }] },
+    { "id": "bm25", "type": "database", "label": "BM25 index", "sublabel": "bm25s · in memory", "pos": [730, 300], "size": [140, 62],
+      "sources": [{ "path": "halo/retrieve/bm25.py", "line": 9, "end_line": 28 }, { "path": "halo/retrieve/__init__.py", "line": 21, "end_line": 28 }] },
+    { "id": "qdrant", "type": "database", "label": "Qdrant", "sublabel": "embedded · cosine", "pos": [960, 430], "size": [140, 62],
+      "sources": [{ "path": "halo/ingest/index.py", "line": 30, "end_line": 31 }, { "path": "halo/ingest/index.py", "line": 98, "end_line": 101 }] },
+
+    { "id": "llm", "type": "backend", "label": "LLM client", "sublabel": "chat · classify", "pos": [1190, 40], "size": [140, 62],
+      "sources": [{ "path": "halo/llm.py", "line": 42, "end_line": 65 }, { "path": "halo/llm.py", "line": 132, "end_line": 146 }] },
+    { "id": "ollama", "type": "external", "label": "Ollama", "sublabel": "qwen3:8b · nomic-embed", "pos": [1420, 40], "size": [140, 62],
+      "sources": [{ "path": "halo/llm.py", "line": 56 }, { "path": "halo/ingest/index.py", "line": 20, "end_line": 27 }] },
+
+    { "id": "download", "type": "backend", "label": "download_data", "sublabel": "HF files + arXiv PDFs", "pos": [40, 560], "size": [140, 62],
+      "sources": [{ "path": "scripts/download_data.py", "line": 1, "end_line": 18 }] },
+    { "id": "data", "type": "database", "label": "data/", "sublabel": "PDFs · corpus JSON", "pos": [270, 560], "size": [140, 62],
+      "sources": [{ "path": "halo/data.py", "line": 12, "end_line": 35 }] },
+    { "id": "pdf", "type": "backend", "label": "PDF reader", "sublabel": "PyMuPDF text blocks", "pos": [500, 560], "size": [140, 62],
+      "sources": [{ "path": "halo/ingest/pdf.py", "line": 13, "end_line": 21 }] },
+    { "id": "sections", "type": "backend", "label": "Section chunker", "sublabel": "n-gram map to sections", "pos": [730, 560], "size": [140, 62],
+      "sources": [{ "path": "halo/ingest/sections.py", "line": 27, "end_line": 54 }, { "path": "halo/ingest/sections.py", "line": 76, "end_line": 83 }] },
+    { "id": "enrich", "type": "backend", "label": "Context enrich", "sublabel": "optional · JSONL cache", "pos": [730, 690], "size": [140, 62],
+      "sources": [{ "path": "halo/ingest/enrich.py", "line": 53, "end_line": 77 }] },
+    { "id": "ingest", "type": "backend", "label": "ingest_papers", "sublabel": "embed + re-index", "pos": [960, 560], "size": [140, 62],
+      "sources": [{ "path": "halo/ingest/index.py", "line": 66, "end_line": 95 }] }
+  ],
+  "boundaries": [
+    { "kind": "region", "label": "Offline indexing (scripts/ingest.py)", "wraps": ["download", "data", "pdf", "sections", "enrich", "ingest"] }
+  ],
+  "connections": [
+    { "id": "client-to-api", "from": "user", "to": "api", "label": "/query", "variant": "emphasis" },
+    { "id": "client-to-ui", "from": "user", "to": "ui", "label": "GET / · SSE" },
+    { "id": "client-to-cli", "from": "user", "to": "cli", "label": "question" },
+    { "id": "ui-to-api", "from": "ui", "to": "api", "label": "events()" },
+    { "id": "cli-to-api", "from": "cli", "to": "api", "label": "build_pipeline()" },
+    { "id": "api-to-retrieve", "from": "api", "to": "retrieve", "label": "invoke", "variant": "emphasis" },
+
+    { "id": "retrieve-to-rerank", "from": "retrieve", "to": "rerank", "label": "fused 50", "variant": "emphasis" },
+    { "id": "rerank-to-grade", "from": "rerank", "to": "grade", "label": "top 10", "variant": "emphasis" },
+    { "id": "grade-to-generate", "from": "grade", "to": "generate", "label": "sufficient", "variant": "emphasis" },
+    { "id": "generate-to-verify", "from": "generate", "to": "verify", "label": "draft", "variant": "emphasis" },
+    { "id": "grade-to-rewrite", "from": "grade", "to": "rewrite", "label": "insufficient, retries left", "variant": "dashed" },
+    { "id": "rewrite-to-retrieve", "from": "rewrite", "to": "retrieve", "label": "new query", "variant": "dashed" },
+    { "id": "grade-to-abstain", "from": "grade", "to": "abstain", "label": "insufficient, none left" },
+
+    { "id": "retrieve-to-retriever", "from": "retrieve", "to": "retriever", "label": "retrieve(query)" },
+    { "id": "retriever-to-qdrant", "from": "retriever", "to": "qdrant", "label": "dense top-50" },
+    { "id": "retriever-to-bm25", "from": "retriever", "to": "bm25", "label": "BM25" },
+
+    { "id": "grade-to-llm", "from": "grade", "to": "llm", "label": "classify" },
+    { "id": "rewrite-to-llm", "from": "rewrite", "to": "llm", "label": "chat" },
+    { "id": "generate-to-llm", "from": "generate", "to": "llm", "label": "chat" },
+    { "id": "verify-to-llm", "from": "verify", "to": "llm", "label": "classify" },
+    { "id": "llm-to-ollama", "from": "llm", "to": "ollama", "label": "/api/chat" },
+
+    { "id": "download-to-data", "from": "download", "to": "data", "label": "PDFs, JSON" },
+    { "id": "data-to-pdf", "from": "data", "to": "pdf", "label": "PDFs" },
+    { "id": "pdf-to-sections", "from": "pdf", "to": "sections", "label": "blocks" },
+    { "id": "sections-to-ingest", "from": "sections", "to": "ingest", "label": "chunks", "variant": "emphasis" },
+    { "id": "sections-to-enrich", "from": "sections", "to": "enrich", "label": "ctx strategy", "variant": "dashed" },
+    { "id": "enrich-to-ingest", "from": "enrich", "to": "ingest", "label": "chunk + context", "variant": "dashed" },
+    { "id": "ingest-to-qdrant", "from": "ingest", "to": "qdrant", "label": "embed + upsert", "variant": "emphasis" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Query path", "items": ["The graph runs retrieve, rerank, grade, then generate and verify", "Grader and generator see the original question; only retrieval uses the rewrite", "Every node appends a timed trace entry, streamed as SSE steps"] },
+    { "dot": "amber", "title": "Corrective loop", "items": ["Insufficient evidence triggers rewrite and a second retrieve", "route_after_grade is the only place the retry limit is enforced", "No retries left: abstain with the grader's reason"] },
+    { "dot": "emerald", "title": "Grounding", "items": ["Code turns [Pn] markers into paper, section, page", "Each sentence is checked against its cited passages", "Unsupported sentences are re-attributed or removed; none left means abstain"] },
+    { "dot": "violet", "title": "Indexing", "items": ["Chunks keep paper id, section id, section title, page", "Point ids are deterministic, so re-ingesting overwrites", "Queries embed through Ollama; BM25 is rebuilt from Qdrant payloads"] }
+  ]
+}

@@ -35,3 +35,11 @@ Thumbs.db
 .idea/
 .env
 advance.md
+# archify build artifacts next to the committed diagram (docs/architecture)
+docs/architecture/*.browser-check.json
+docs/architecture/*.delivery.json
+docs/architecture/*.finalize.json
+docs/architecture/*.finalize-summary.json
+[INFO] Recording command outcome: printf
+
+[OK] Command outcome recorded

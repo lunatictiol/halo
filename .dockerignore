@@ -1,0 +1,22 @@
+# Build context = what the image needs to run the app: halo/, config/, splits/, scripts/, eval/, docker/.
+# Data and the index are bind-mounted at run time; .env holds secrets and must never reach an image layer.
+**/.env*
+.git
+.github
+.venv
+data
+results
+tests
+docs
+graphify-out
+.agents
+.claude
+.claude-flow
+.serena
+*.pdf
+*.csv
+**/__pycache__
+.pytest_cache
+.ruff_cache
+MILESTONE_NOTES.md
+advance.md
